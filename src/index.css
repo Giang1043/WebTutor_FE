@@ -1,0 +1,200 @@
+@import "tailwindcss";
+@import "react-day-picker/dist/style.css";
+
+/* Màu thương hiệu — dùng qua bg-brand / text-brand / border-brand / from-brand…
+   Trước đây hex được viết thẳng trong class (bg-[#1e3a5f]) ở hơn 280 chỗ. */
+@theme {
+  --color-brand: #1e3a5f; /* xanh navy chủ đạo */
+  --color-brand-dark: #16304f; /* trạng thái hover / điểm đậm của gradient */
+  --color-brand-accent: #2d5a9e; /* điểm nhấn sáng hơn */
+}
+
+/* Map shadcn CSS variables → Tailwind v4 color utilities (tránh bg-popover không có màu / trong suốt) */
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+}
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 48%;
+  }
+
+  * {
+    border-color: hsl(var(--border));
+  }
+
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    /* Chặn cuộn ngang ngoài ý muốn trên mobile (dùng clip để không phá position:sticky).
+       Các vùng cần cuộn ngang có chủ đích vẫn dùng overflow-x-auto riêng. */
+    overflow-x: clip;
+  }
+
+  input:focus,
+  input:focus-visible,
+  textarea:focus,
+  textarea:focus-visible,
+  select:focus,
+  select:focus-visible,
+  [role="combobox"]:focus,
+  [role="combobox"]:focus-visible,
+  button[data-state]:focus-visible {
+    outline: none !important;
+    box-shadow: none !important;
+    --tw-ring-color: transparent !important;
+    --tw-ring-offset-shadow: none !important;
+    --tw-ring-shadow: none !important;
+  }
+
+  select,
+  [role="combobox"],
+  [data-radix-collection-item] {
+    cursor: pointer !important;
+  }
+
+  button,
+  [role="button"],
+  a[href],
+  summary {
+    cursor: pointer;
+  }
+}
+/* react-day-picker v9: chỉ ghi đè CSS variables, không can thiệp layout/events */
+.rdp-root {
+  --rdp-accent-color: hsl(var(--primary));
+  --rdp-accent-background-color: hsl(var(--accent));
+  --rdp-today-color: hsl(var(--primary));
+  --rdp-day-height: 36px;
+  --rdp-day-width: 36px;
+  --rdp-day_button-height: 32px;
+  --rdp-day_button-width: 32px;
+  --rdp-day_button-border-radius: 8px;
+}
+
+/* Fix chevron icons: Lucide dùng stroke không dùng fill */
+.rdp-chevron {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2px;
+}
+
+/* ============================================================
+   Auth UI — ambient motion (blob trôi). Hiệu ứng vào (entrance)
+   do AOS đảm nhiệm qua data-aos; ở đây chỉ giữ chuyển động lặp.
+   ============================================================ */
+@keyframes wtc-float {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(10px, -22px);
+  }
+}
+
+.animate-float-slow {
+  animation: wtc-float 9s ease-in-out infinite;
+}
+.animate-float-slower {
+  animation: wtc-float 13s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-float-slow,
+  .animate-float-slower {
+    animation: none !important;
+  }
+}
+
+/* ============================================================
+   Auth UI — premium surface system (scoped to .auth-shell)
+   ============================================================ */
+
+/* Font có cá tính cho khu xác thực (không đổi font toàn app) */
+.auth-shell {
+  font-family:
+    "Plus Jakarta Sans",
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Bật lại focus ring cho input trong auth (accessibility) — ghi đè rule
+   global tắt ring ở trên bằng selector đặc hiệu hơn + !important. */
+.auth-shell input:focus-visible,
+.auth-shell textarea:focus-visible {
+  box-shadow: 0 0 0 3px rgb(30 58 95 / 0.16) !important;
+}
+
+/* Grain overlay — phá độ phẳng digital. Đặt opacity qua Tailwind trên element. */
+.noise-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 160px 160px;
+}

@@ -1,24 +1,34 @@
 # WebTutor_FE
 
-Frontend scaffold for week 1.
+Frontend foundation for the rebuild project. The current milestone contains
+only the registration and email OTP screens.
 
-## Wireframes included
+## Included scope
 
-- Home.
-- Login.
-- Register.
-- Class listing.
-- Tutor listing.
-- Admin dashboard.
+- React and Vite application foundation.
+- React Router route shell.
+- Redux Toolkit store for register/OTP request state.
+- Axios API client.
+- Register form with client-side validation.
+- OTP verification and resend screens.
 
-Các màn hình hiện chỉ là wireframe có route, chưa gọi API nghiệp vụ. API health được chuẩn bị trong `src/services/api.js`.
+Login, profile, tutor, class, chat, payment and admin screens will be added in
+later rebuild milestones.
 
-## Run
+## Local setup
 
 ```powershell
-Copy-Item .env.example .env
 npm install
+Copy-Item .env.example .env
 npm run dev
 ```
 
-Mặc định frontend chạy tại `http://localhost:4000` và backend tại `http://localhost:5003`.
+Set `VITE_API_BASE_URL` to the backend API, for example
+`http://localhost:5002/api`.
+
+## Validation
+
+```powershell
+npm run lint
+npm run build
+```
