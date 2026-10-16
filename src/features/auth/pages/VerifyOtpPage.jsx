@@ -4,21 +4,19 @@ import { useDispatch } from "react-redux";
 
 import { verifyOtpThunk, resendOtpThunk } from "@/features/auth/store/authThunks";
 import AuthLeftPanel from "@/features/auth/components/AuthLeftPanel";
-import VerifyOtpForm from "@/features/auth/components/VerifyOtpForm";
+import VerifyOtpForm from "@/features/auth/components/register/VerifyOtpForm";
 
 const RESEND_COOLDOWN_SECONDS = 60;
 
-// Trang nhập OTP để hoàn tất đăng ký tài khoản.
 const VerifyOtpPage = () => {
-  const dispatch = useDispatch();
-  const navigate = useNavigate();
-  const location = useLocation();
+  const dispatch  = useDispatch();
+  const navigate  = useNavigate();
+  const location  = useLocation();
 
   const email = location.state?.email || "";
-  const from = location.state?.from; // giữ đích quay lại (vd /find-tutor) xuyên suốt luồng đăng ký
 
-  const [serverError, setServerError] = useState("");
-  const [resendCooldown, setResendCooldown] = useState(RESEND_COOLDOWN_SECONDS);
+  const [serverError,     setServerError]     = useState("");
+  const [resendCooldown,  setResendCooldown]   = useState(RESEND_COOLDOWN_SECONDS);
 
   useEffect(() => {
     if (!email) {
@@ -32,12 +30,11 @@ const VerifyOtpPage = () => {
     return () => clearTimeout(timer);
   }, [resendCooldown]);
 
-  // Xác thực OTP đăng ký và điều hướng khi thành công.
   const onSubmit = async ({ otp }) => {
     setServerError("");
     const result = await dispatch(verifyOtpThunk({ email, otp }));
     if (verifyOtpThunk.fulfilled.match(result)) {
-      navigate(from || "/", { replace: true });
+      navigate("/login", { state: { verified: true } });
     } else {
       setServerError(result.payload || "Mã OTP không đúng, vui lòng thử lại.");
     }
@@ -54,7 +51,7 @@ const VerifyOtpPage = () => {
   }, [dispatch, email]);
 
   return (
-    <div className="auth-shell flex min-h-dvh w-full">
+    <div className="flex min-h-screen w-full">
       <AuthLeftPanel />
       <VerifyOtpForm
         email={email}
