@@ -1,0 +1,662 @@
+import { startTransition, useEffect, useMemo, useState } from "react";
+
+import {
+  ArrowRight,
+  BookOpenText,
+  CalendarClock,
+  CalendarDays,
+  CircleHelp,
+  Clock3,
+  Eye,
+  Filter,
+  MapPin,
+  MapPinned,
+  MessageSquareText,
+  Search,
+  SlidersHorizontal,
+  Sparkles,
+  UserRound,
+  Users,
+} from "lucide-react";
+import { useDispatch, useSelector } from "react-redux";
+import { Link, useLocation } from "react-router-dom";
+import AOS from "aos";
+
+import { Button } from "@/components/ui/button";
+import ClassReceiveDialog from "@/features/classes/components/ClassReceiveDialog";
+import DirectSupportCard from "@/features/classes/components/DirectSupportCard";
+import SearchableSelect from "@/features/classes/components/SearchableSelect";
+import classService from "@/features/classes/services/classService";
+import { fetchClassesThunk } from "@/features/classes/store/classThunks";
+import { CONTRACT_ROUTE } from "@/features/classes/constants";
+import { getTutorProfileThunk } from "@/features/tutors/store/tutorThunks";
+import useReceiveClass from "@/features/classes/hooks/useReceiveClass";
+import {
+  CLASS_FEE_LABEL,
+  classFee,
+  formatAvailabilitySlotsOneLine,
+  formatDateTime,
+  formatPrice,
+  formatStudentGender,
+  formatTutorGenderPref,
+  formatTutorLevelPref,
+} from "@/features/classes/utils/classFormatters";
+import useAuth from "@/features/auth/hooks/useAuth";
+import locationService from "@/features/tutors/services/locationService";
+import { normalizeForSearch } from "@/lib/utils";
+
+// Trang danh sách lớp đang cần gia sư (công khai, có lọc và phân trang).
+const NewClassesPage = () => {
+  const dispatch = useDispatch();
+  const location = useLocation();
+  const { isAuthenticated, user } = useAuth();
+  const { list, pagination, loadingList } = useSelector((state) => state.classes);
+  const tutorProfile = useSelector((state) => state.tutors.profile);
+  const [reloadKey, setReloadKey] = useState(0);
+  const { receiveDialog, applying, openReceive, confirmApply, closeDialog } = useReceiveClass(() =>
+    setReloadKey((k) => k + 1),
+  );
+  // Đã đăng ký làm gia sư (đang chờ duyệt hoặc đã duyệt) → ẩn lời mời "Trở thành gia sư đối tác"
+  const isRegisteredTutor = user?.role === "tutor" || Boolean(tutorProfile);
+  const [filters, setFilters] = useState({ subject: "", provinceCode: "", districtCode: "" });
+  const [provinces, setProvinces] = useState([]);
+  const [districts, setDistricts] = useState([]);
+  const [subjects, setSubjects] = useState([]);
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 6;
+  const ALL_SUBJECTS_VALUE = "__all_subjects__";
+  const normalizedSubjectFilter = useMemo(() => {
+    if (!filters.subject) return "";
+    // So khớp không dấu + không phân biệt hoa/thường để "toan" cũng ra môn "Toán"
+    const target = normalizeForSearch(filters.subject);
+    const matchedSubject = subjects.find((item) => normalizeForSearch(item) === target);
+    return matchedSubject || filters.subject;
+  }, [filters.subject, subjects]);
+
+  useEffect(() => {
+    classService
+      .subjects()
+      .then((res) => startTransition(() => setSubjects(res.data.data.subjects || [])))
+      .catch(() => startTransition(() => setSubjects([])));
+  }, []);
+
+  // Kiểm tra người dùng đã có hồ sơ gia sư chưa để quyết định ẩn lời mời đăng ký.
+  // Bỏ qua nếu chưa đăng nhập hoặc đã là gia sư đã duyệt (role tutor) hoặc đã tải hồ sơ.
+  useEffect(() => {
+    if (isAuthenticated && user?.role !== "tutor" && !tutorProfile) {
+      dispatch(getTutorProfileThunk());
+    }
+  }, [isAuthenticated, user?.role, tutorProfile, dispatch]);
+
+  useEffect(() => {
+    locationService
+      .getProvinces()
+      .then((res) => startTransition(() => setProvinces(res.data.data.provinces || [])))
+      .catch(() => startTransition(() => setProvinces([])));
+  }, []);
+
+  useEffect(() => {
+    dispatch(
+      fetchClassesThunk({
+        ...(normalizedSubjectFilter ? { subject: normalizedSubjectFilter } : {}),
+        ...(filters.provinceCode ? { provinceCode: Number(filters.provinceCode) } : {}),
+        ...(filters.districtCode ? { districtCode: Number(filters.districtCode) } : {}),
+        page: currentPage,
+        limit: pageSize,
+      }),
+    );
+  }, [currentPage, dispatch, filters, normalizedSubjectFilter, reloadKey]);
+
+  useEffect(() => {
+    if (!filters.provinceCode) return;
+    locationService
+      .getDistricts(Number(filters.provinceCode))
+      .then((res) => startTransition(() => setDistricts(res.data.data.districts || [])))
+      .catch(() => startTransition(() => setDistricts([])));
+  }, [filters.provinceCode]);
+
+  useEffect(() => {
+    startTransition(() => setCurrentPage(1));
+  }, [filters]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const subjectParam = params.get("subject");
+    if (subjectParam) {
+      startTransition(() => {
+        setFilters((prev) => ({ ...prev, subject: subjectParam }));
+      });
+    }
+  }, [location.search]);
+
+  // Gợi ý nhanh: lấy thẳng từ danh sách môn của BE (đã sort theo order do admin định nghĩa),
+  // tránh hardcode khiến tag không khớp tên môn trong DB → lọc ra rỗng.
+  const popularTags = useMemo(() => subjects.slice(0, 10), [subjects]);
+
+  const totalPages = pagination?.totalPages || 1;
+  const totalItems = pagination?.totalItems || 0;
+  const returnTo = `${location.pathname}${location.search}`;
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      startTransition(() => setCurrentPage(totalPages));
+    }
+  }, [currentPage, totalPages]);
+
+  const visiblePageNumbers = useMemo(() => {
+    if (totalPages <= 7) {
+      return Array.from({ length: totalPages }, (_, index) => index + 1);
+    }
+
+    const pages = new Set([1, totalPages, currentPage - 1, currentPage, currentPage + 1]);
+    return [...pages].filter((page) => page >= 1 && page <= totalPages).sort((a, b) => a - b);
+  }, [currentPage, totalPages]);
+
+  const skeletonItems = useMemo(
+    () => Array.from({ length: Math.min(pageSize, 3) }, (_, index) => `class-skeleton-${index}`),
+    [pageSize],
+  );
+
+  // Tính lại vị trí animation khi nội dung bất đồng bộ hoặc bộ lọc mở rộng thay đổi.
+  useEffect(() => {
+    AOS.refresh();
+  }, [loadingList, list.length, showAdvancedFilters]);
+
+  return (
+    <div className="mx-auto max-w-[1360px] px-6 py-8">
+      <div
+        data-aos="fade-down"
+        data-aos-duration="550"
+        className="sticky top-16 z-40 mb-7 rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-md backdrop-blur-md ring-1 ring-white/60"
+      >
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="relative min-w-0 flex-1">
+            <BookOpenText className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <SearchableSelect
+              value={filters.subject || ALL_SUBJECTS_VALUE}
+              onValueChange={(value) =>
+                setFilters((prev) => ({
+                  ...prev,
+                  subject: value === ALL_SUBJECTS_VALUE ? "" : value,
+                }))
+              }
+              placeholder="Tất cả môn học"
+              allValue={ALL_SUBJECTS_VALUE}
+              allLabel="Tất cả môn học"
+              options={subjects.map((subject) => ({ value: subject, label: subject }))}
+              searchPlaceholder="Tìm môn học..."
+              emptyText="Không tìm thấy môn học phù hợp"
+              triggerClassName="h-11 rounded-xl border-slate-200 pl-10 text-sm text-slate-700 focus-visible:ring-emerald-200"
+              contentClassName="max-h-80"
+            />
+          </div>
+
+          <div className="relative min-w-0 flex-1">
+            <MapPinned className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <SearchableSelect
+              value={filters.provinceCode || ""}
+              onValueChange={(value) => {
+                setDistricts([]);
+                setFilters((prev) => ({
+                  ...prev,
+                  provinceCode: value,
+                  districtCode: "",
+                }));
+              }}
+              placeholder="Chọn tỉnh/thành phố"
+              options={provinces.map((item) => ({ value: String(item.code), label: item.name }))}
+              searchPlaceholder="Tìm tỉnh/thành..."
+              emptyText="Không tìm thấy khu vực phù hợp"
+              triggerClassName="h-11 rounded-xl border-slate-200 pl-10 text-sm text-slate-700 focus-visible:ring-emerald-200"
+              contentClassName="max-h-80"
+            />
+          </div>
+
+          <div className="flex gap-3">
+            <Button className="h-11 flex-1 rounded-xl bg-emerald-600 px-5 text-sm font-semibold text-white hover:bg-emerald-700 sm:flex-initial sm:min-w-[140px]">
+              <Search className="mr-2 h-4 w-4" />
+              Tìm kiếm
+            </Button>
+
+            <Button
+              type="button"
+              variant="outline"
+              className="h-11 shrink-0 rounded-xl border-slate-200 px-4 text-sm font-medium text-slate-600 hover:bg-slate-50"
+              onClick={() => setShowAdvancedFilters((prev) => !prev)}
+            >
+              <SlidersHorizontal className="mr-2 h-4 w-4" />
+              Bộ lọc
+            </Button>
+          </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
+            <Filter className="mr-1.5 h-3.5 w-3.5" />
+            Gợi ý nhanh
+          </span>
+          {popularTags.map((tag) => (
+            <button
+              key={tag}
+              type="button"
+              className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+                filters.subject === tag
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  : "border-slate-200 bg-white text-slate-600 hover:border-emerald-200 hover:text-emerald-700"
+              }`}
+              onClick={() => setFilters((prev) => ({ ...prev, subject: tag }))}
+            >
+              {tag}
+            </button>
+          ))}
+        </div>
+
+        {showAdvancedFilters && (
+          <div
+            data-aos="fade-down"
+            data-aos-duration="350"
+            data-aos-offset="0"
+            className="mt-4 grid grid-cols-3 gap-3 border-t border-slate-100 pt-4"
+          >
+            <div className="col-span-1">
+              <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                Quận/huyện
+              </label>
+              <SearchableSelect
+                value={filters.districtCode || ""}
+                onValueChange={(value) =>
+                  setFilters((prev) => ({
+                    ...prev,
+                    districtCode: value,
+                  }))
+                }
+                placeholder="Chọn quận/huyện"
+                options={districts.map((item) => ({ value: String(item.code), label: item.name }))}
+                searchPlaceholder="Tìm quận/huyện..."
+                emptyText="Không tìm thấy quận/huyện phù hợp"
+                disabled={!filters.provinceCode}
+                triggerClassName="h-10 rounded-lg border-slate-200 text-sm text-slate-700 focus-visible:ring-emerald-200"
+                contentClassName="max-h-80"
+              />
+            </div>
+
+            <div className="col-span-2 flex items-end justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-10 rounded-lg border-slate-200 text-slate-600 hover:bg-slate-50"
+                onClick={() => {
+                  setDistricts([]);
+                  setFilters({ subject: "", provinceCode: "", districtCode: "" });
+                }}
+              >
+                Xóa bộ lọc
+              </Button>
+              <span className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                Dữ liệu tự cập nhật theo bộ lọc đang chọn
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+        <div className="min-w-0 space-y-4 lg:col-span-9">
+          <div
+            data-aos="fade-right"
+            data-aos-delay="80"
+            className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-5 py-3 shadow-sm"
+          >
+            <div>
+              <h1 className="text-lg font-semibold text-slate-900">Lớp cần gia sư</h1>
+              <p className="text-sm text-slate-500">
+                Danh sách cập nhật theo môn học, khu vực và nhu cầu thực tế.
+              </p>
+            </div>
+            <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+              {totalItems} lớp khả dụng
+            </span>
+          </div>
+
+          {!loadingList && list.length === 0 && (
+            <div
+              data-aos="fade-up"
+              className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm"
+            >
+              Chưa có lớp phù hợp với bộ lọc hiện tại.
+            </div>
+          )}
+
+          {loadingList &&
+            skeletonItems.map((skeletonKey) => (
+              <article
+                key={skeletonKey}
+                className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+              >
+                <div className="animate-pulse">
+                  <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+                    <div className="flex-1">
+                      <div className="h-7 w-3/4 rounded-md bg-slate-200" />
+                      <div className="mt-3 h-4 w-1/3 rounded-md bg-slate-200" />
+                    </div>
+                    <div className="h-28 w-full rounded-xl bg-slate-200 sm:w-[220px]" />
+                  </div>
+
+                  <div className="mb-4 h-16 w-full rounded-xl bg-slate-200" />
+
+                  <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <div className="h-16 rounded-lg bg-slate-200" />
+                    <div className="h-16 rounded-lg bg-slate-200" />
+                    <div className="h-16 rounded-lg bg-slate-200" />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="h-5 rounded bg-slate-200" />
+                    <div className="h-5 rounded bg-slate-200" />
+                    <div className="h-5 rounded bg-slate-200" />
+                    <div className="h-5 rounded bg-slate-200" />
+                  </div>
+                </div>
+              </article>
+            ))}
+
+          {!loadingList &&
+            list.map((item, idx) => (
+              <article
+                key={item.id || item._id}
+                data-aos="fade-up"
+                data-aos-delay={Math.min(idx, 4) * 60}
+                className="group relative rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-[box-shadow,border-color] duration-200 ease-out hover:border-slate-300 hover:shadow-md"
+              >
+                {/* Tiêu đề + meta. Trên desktop chừa chỗ cho ô phí nổi góc phải (sm:pr) */}
+                <div className="min-w-0 sm:pr-[264px]">
+                  <h2 className="line-clamp-2 text-xl font-semibold leading-tight text-slate-900 sm:text-[22px]">
+                    {item.subject} -{" "}
+                    {item.summary || `Cần Gia Sư tại ${item.districtName || ""}, ${item.provinceName || ""}`}
+                  </h2>
+                  <div className="mt-2.5 flex flex-col gap-1 text-slate-500">
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
+                        Mã lớp {item.classCode}
+                      </span>
+                      <Link
+                        to={`/classes/${item.id || item._id}`}
+                        className="text-xs font-bold text-orange-600 hover:text-orange-700 hover:underline flex items-center gap-1"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                        Xem thêm
+                      </Link>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                      <Clock3 className="h-3.5 w-3.5" />
+                      <span>Đăng ngày: {formatDateTime(item.createdAt)}</span>
+                    </div>
+                    <div className="mt-1 flex items-center gap-2">
+                      <BookOpenText className="h-4 w-4 text-emerald-600" />
+                      <span className="text-sm text-slate-500">Học phí / buổi:</span>
+                      <strong className="text-lg font-bold leading-none text-emerald-600">
+                        {formatPrice(item.feePerSession)}
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Ghi chú: ẩn trên điện thoại cho gọn, có nhãn để tách khỏi thông tin hệ thống. */}
+                <div className="mt-4 hidden items-start gap-3 rounded-xl bg-slate-50/80 px-4 py-3 ring-1 ring-inset ring-slate-200/70 sm:mr-[260px] sm:flex">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white text-emerald-700 shadow-sm ring-1 ring-slate-200/80">
+                    <MessageSquareText className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-slate-500">Ghi chú từ người đăng</p>
+                    <p className="mt-1 line-clamp-2 break-words text-sm leading-relaxed text-slate-700">
+                      {item.description || "Người đăng chưa bổ sung ghi chú cho lớp học này."}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+                  <div className="hidden rounded-lg border border-slate-100 bg-white px-3 py-2.5 text-slate-700 sm:block">
+                    <p className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      <Users className="h-4 w-4 text-emerald-600" />
+                      Học viên
+                    </p>
+                    <p>
+                      {item.studentCount} học viên
+                      {item.studentGender ? ` (${formatStudentGender(item.studentGender)})` : ""}
+                    </p>
+                  </div>
+                  <div className="hidden rounded-lg border border-slate-100 bg-white px-3 py-2.5 text-slate-700 sm:block">
+                    <p className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      <CalendarDays className="h-4 w-4 text-emerald-600" />
+                      Lịch học
+                    </p>
+                    <p>
+                      {item.sessionsPerWeek} buổi/tuần ({item.minutesPerSession} phút/buổi)
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-slate-100 bg-white px-3 py-2.5 text-slate-700">
+                    <p className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      <BookOpenText className="h-4 w-4 text-emerald-600" />
+                      Môn học
+                    </p>
+                    <p>{item.subject}</p>
+                  </div>
+                </div>
+
+                <div className="mt-4 space-y-2.5 border-t border-slate-100 pt-3.5 text-sm text-slate-600">
+                  <div className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
+                    <div className="flex items-center gap-2">
+                      <MapPin className="h-4 w-4 shrink-0 text-slate-400" />
+                      <span>
+                        <strong className="font-semibold text-slate-700">Địa điểm:</strong>{" "}
+                        {item.provinceName && item.districtName
+                          ? `${item.provinceName}, ${item.districtName}`
+                          : item.locationLabel}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <UserRound className="h-4 w-4 shrink-0 text-slate-400" />
+                      <span>
+                        <strong className="font-semibold text-slate-700">Yêu cầu trình độ:</strong>{" "}
+                        {formatTutorLevelPref(item.tutorLevelPref)}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <UserRound className="h-4 w-4 shrink-0 text-slate-400" />
+                      <span>
+                        <strong className="font-semibold text-slate-700">Yêu cầu giới tính:</strong>{" "}
+                        {formatTutorGenderPref(item.tutorGenderPref)}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2 border-t border-slate-50 pt-2.5">
+                    <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                    <p
+                      className="text-sm leading-relaxed"
+                      title={formatAvailabilitySlotsOneLine(item.availabilitySlots)}
+                    >
+                      <strong className="font-semibold text-slate-700">Thời gian có thể học:</strong>{" "}
+                      {formatAvailabilitySlotsOneLine(item.availabilitySlots)}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Phí nhận lớp + CTA: desktop nổi góc phải, điện thoại đặt xuống cuối bài */}
+                <div className="mt-4 w-full shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-white text-left shadow-[0_10px_28px_-22px_rgba(15,23,42,0.55)] sm:absolute sm:right-5 sm:top-5 sm:mt-0 sm:w-[240px]">
+                  <div className="bg-linear-to-br from-white via-white to-emerald-50/70 px-4 pb-3 pt-3.5">
+                    <p className="text-xs font-semibold text-slate-500">Chi phí nhận lớp</p>
+                    <p className="mt-1.5 text-[28px] font-bold leading-none tracking-tight text-slate-950 tabular-nums">
+                      {formatPrice(classFee(item))}
+                    </p>
+                    <p className="mt-2 text-xs font-medium text-emerald-700">{CLASS_FEE_LABEL}</p>
+                  </div>
+                  {user?.id && item.createdBy === user.id ? (
+                    <div className="border-t border-slate-100 p-2.5">
+                      <div className="flex h-10 w-full items-center justify-center rounded-lg bg-slate-100 text-sm font-medium text-slate-500">
+                        Bài đăng của bạn
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="border-t border-slate-100 p-2.5">
+                      <Button
+                        type="button"
+                        className="group/cta h-auto min-h-10 w-full whitespace-normal rounded-lg bg-emerald-600 px-3 py-2 text-center text-sm font-semibold leading-tight text-white shadow-sm transition-[background-color,transform] hover:bg-emerald-700 active:translate-y-px"
+                        onClick={() => openReceive(item)}
+                      >
+                        Gửi yêu cầu nhận lớp
+                        <ArrowRight className="ml-1.5 h-4 w-4 shrink-0 transition-transform duration-200 group-hover/cta:translate-x-1" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </article>
+            ))}
+
+          {!loadingList && list.length > 0 && (
+            <div
+              data-aos="fade-up"
+              className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm"
+            >
+              <p className="text-slate-500">
+                Trang {currentPage}/{totalPages} • Hiển thị {list.length} / {totalItems} lớp
+              </p>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                >
+                  Trước
+                </button>
+
+                {visiblePageNumbers.map((page, index) => {
+                  const prevPage = visiblePageNumbers[index - 1];
+                  const hasGap = index > 0 && page - prevPage > 1;
+
+                  return (
+                    <div key={page} className="flex items-center gap-1.5">
+                      {hasGap && <span className="px-1 text-slate-400">...</span>}
+                      <button
+                        type="button"
+                        className={`min-w-9 rounded-lg border px-2.5 py-1.5 text-sm font-medium transition ${
+                          page === currentPage
+                            ? "border-emerald-600 bg-emerald-600 text-white"
+                            : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                        }`}
+                        onClick={() => setCurrentPage(page)}
+                      >
+                        {page}
+                      </button>
+                    </div>
+                  );
+                })}
+
+                <button
+                  type="button"
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages}
+                >
+                  Sau
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <aside className="hidden space-y-4 lg:col-span-3 lg:block">
+          {!isRegisteredTutor && (
+            <div
+              data-aos="fade-left"
+              data-aos-delay="80"
+              className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+            >
+              <div className="mb-4 inline-flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+                <Sparkles className="h-5 w-5" />
+              </div>
+              <h3 className="text-base font-semibold text-slate-900">Trở thành gia sư đối tác</h3>
+              <p className="mt-2 text-sm leading-relaxed text-slate-600">
+                Tham gia mạng lưới gia sư chuyên nghiệp để nhận lớp phù hợp theo môn và khu vực của bạn.
+              </p>
+              <Link to="/register-tutor">
+                <Button className="mt-4 h-10 w-full rounded-lg bg-rose-600 text-sm font-semibold text-white hover:bg-rose-700">
+                  Đăng ký làm gia sư
+                </Button>
+              </Link>
+            </div>
+          )}
+
+          <DirectSupportCard data-aos="fade-left" data-aos-delay="140" />
+
+          <div
+            data-aos="fade-left"
+            data-aos-delay="200"
+            className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+          >
+            <h3 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
+              <CircleHelp className="h-4 w-4" />
+              Gia sư cần biết
+            </h3>
+            <ul className="mt-3 space-y-2">
+              <li>
+                <Link
+                  to="#"
+                  className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2 text-sm text-slate-700 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
+                >
+                  Quy trình nhận lớp
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </li>
+              <li>
+                <Link
+                  to={CONTRACT_ROUTE}
+                  className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2 text-sm text-slate-700 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
+                >
+                  Hợp đồng mẫu
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </li>
+            </ul>
+          </div>
+
+          <div
+            data-aos="fade-left"
+            data-aos-delay="260"
+            className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+          >
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+              Danh mục phổ biến
+            </h3>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {popularTags.map((tag) => (
+                <button
+                  key={tag}
+                  type="button"
+                  className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
+                  onClick={() => setFilters((prev) => ({ ...prev, subject: tag }))}
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
+          </div>
+        </aside>
+      </div>
+      <ClassReceiveDialog
+        open={receiveDialog.open}
+        type={receiveDialog.type}
+        classItem={receiveDialog.classItem}
+        returnTo={returnTo}
+        onClose={closeDialog}
+        onConfirm={confirmApply}
+        applying={applying}
+        tutorSubjects={receiveDialog.tutorSubjects}
+        mismatchReasons={receiveDialog.mismatchReasons}
+      />
+    </div>
+  );
+};
+
+export default NewClassesPage;

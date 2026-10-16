@@ -1,0 +1,26 @@
+import { BadgeCheck } from "lucide-react";
+
+// Huy hiệu "Gia sư uy tín"; `compact` cho bản gọn dùng ở thẻ nhỏ.
+export default function TrustedTutorBadge({ compact = false, className = "" }) {
+  if (compact) {
+    return (
+      <span
+        title="Gia sư uy tín — top gia sư được đánh giá nhiều và cao nhất"
+        className={`inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700 ring-1 ring-amber-200 ${className}`}
+      >
+        <BadgeCheck className="h-3.5 w-3.5" />
+        Uy tín
+      </span>
+    );
+  }
+
+  return (
+    <span
+      title="Top gia sư được đánh giá nhiều và cao nhất"
+      className={`inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-sm font-semibold text-amber-700 ring-1 ring-amber-200 ${className}`}
+    >
+      <BadgeCheck className="h-4 w-4" />
+      Gia sư uy tín
+    </span>
+  );
+}
