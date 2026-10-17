@@ -84,9 +84,39 @@ export const getUserInfoThunk = createAsyncThunk(
   async (_, { rejectWithValue }) => {
     try {
       const res = await authService.getUserInfo();
-      return res.data.data.user;
+      const user = res.data?.data?.user;
+      if (!user) {
+        return rejectWithValue("Không lấy được thông tin (phản hồi rỗng từ server)");
+      }
+      return user;
     } catch (err) {
       return rejectWithValue(err.response?.data?.message || "Không lấy được thông tin");
+    }
+  }
+);
+
+export const updateProfileThunk = createAsyncThunk(
+  "auth/updateProfile",
+  async (data, { rejectWithValue }) => {
+    try {
+      const res = await authService.updateProfile(data);
+      return res.data.data.user;
+    } catch (err) {
+      return rejectWithValue(err.response?.data?.message || "Cập nhật thất bại");
+    }
+  }
+);
+
+export const uploadAvatarThunk = createAsyncThunk(
+  "auth/uploadAvatar",
+  async (file, { rejectWithValue }) => {
+    try {
+      const formData = new FormData();
+      formData.append("avatar", file);
+      const res = await authService.uploadAvatar(formData);
+      return res.data.data.user;
+    } catch (err) {
+      return rejectWithValue(err.response?.data?.message || "Tải ảnh lên thất bại");
     }
   }
 );
