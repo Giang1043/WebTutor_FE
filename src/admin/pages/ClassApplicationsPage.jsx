@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { createElement, useEffect, useMemo, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import {
   BookOpen,
@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import Pagination from "@/components/shared/Pagination";
 import {
   approveClassApplicationThunk,
   getClassApplicationStatsThunk,
@@ -50,8 +51,11 @@ const genderLabel = (value) =>
 const occupationLabel = (value) =>
   value === "student" ? "Sinh viên" : value === "teacher" ? "Giáo viên" : "Đã tốt nghiệp";
 
+const PAGE_SIZE = 10;
+
+// Admin chỉ thao tác trên đơn "selected" (gia sư đã được người đăng chọn, chờ duyệt lớp)
 const TABS = [
-  { key: "pending", label: "Chờ duyệt", color: "amber" },
+  { key: "selected", label: "Chờ duyệt", color: "amber" },
   { key: "approved", label: "Đã duyệt", color: "emerald" },
   { key: "rejected", label: "Từ chối", color: "rose" },
 ];
@@ -138,12 +142,12 @@ const TutorAvatar = ({ tutor, size = "h-10 w-10" }) =>
 
 // ─── Detail modals ─────────────────────────────────────────────────────────────
 
-const ModalShell = ({ title, icon: Icon, onClose, children }) => (
+const ModalShell = ({ title, icon, onClose, children }) => (
   <div className="fixed inset-0 z-80 flex items-center justify-center bg-slate-950/50 px-4 backdrop-blur-sm">
     <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-2xl">
       <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
         <div className="flex items-center gap-2 text-sm font-bold text-[#1e3a5f]">
-          <Icon className="h-4 w-4" />
+          {createElement(icon, { className: "h-4 w-4" })}
           {title}
         </div>
         <button
@@ -186,32 +190,92 @@ const SlotChips = ({ slots, tone = "slate" }) => {
   );
 };
 
+const CLASS_STATUS_LABEL = {
+  open: { text: "Đang mở nhận gia sư", cls: "bg-emerald-50 text-emerald-700" },
+  matched: { text: "Đã ghép gia sư", cls: "bg-blue-50 text-blue-700" },
+  expired: { text: "Đã hết hạn", cls: "bg-slate-100 text-slate-600" },
+  completed: { text: "Đã hoàn thành", cls: "bg-violet-50 text-violet-700" },
+};
+
+const ClassStatusBadge = ({ status }) => {
+  const s = CLASS_STATUS_LABEL[status] || CLASS_STATUS_LABEL.open;
+  return (
+    <span className={`inline-flex shrink-0 items-center rounded-full px-2.5 py-1 text-xs font-semibold ${s.cls}`}>
+      {s.text}
+    </span>
+  );
+};
+
 const ClassDetailModal = ({ classItem, onClose }) => {
   if (!classItem) return null;
+
+  const receivingFee = Math.round((classItem.feePerMonth || 0) * 0.05);
+  const hasPromo = Boolean(classItem.promoCode) && (classItem.promoDiscount || 0) > 0;
+  const region =
+    classItem.provinceName && classItem.districtName
+      ? `${classItem.districtName}, ${classItem.provinceName}`
+      : classItem.provinceName || classItem.districtName || "—";
+
   return (
     <ModalShell title={`Bài đăng #${classItem.classCode || "—"}`} icon={BookOpen} onClose={onClose}>
-      <div className="space-y-2.5">
-        <InfoRow label="Môn học">
-          <span className="font-bold text-emerald-700">{classItem.subject || "—"}</span>
-        </InfoRow>
-        <InfoRow label="Địa chỉ chi tiết">{classItem.locationLabel || "—"}</InfoRow>
-        <InfoRow label="SĐT phụ huynh">{classItem.contactPhone || "—"}</InfoRow>
-        <InfoRow label="Thời lượng">
-          {classItem.sessionsPerWeek} buổi/tuần · {classItem.minutesPerSession} phút/buổi
-        </InfoRow>
-        <InfoRow label="Học phí">
-          <span className="font-bold text-emerald-600">
-            {formatPrice(classItem.feePerSession)}/buổi ({formatPrice(classItem.feePerMonth)}/tháng)
-          </span>
-        </InfoRow>
-        <InfoRow label="Yêu cầu gia sư">{formatClassTutorPrefsSummary(classItem)}</InfoRow>
-        <InfoRow label="Học viên">
-          {classItem.studentCount} học viên ({genderLabel(classItem.studentGender)})
-        </InfoRow>
+      <div className="space-y-3">
+        {/* Tiêu đề + trạng thái + ngày đăng */}
+        <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-sm font-bold leading-snug text-slate-800">
+              {classItem.summary || `Cần gia sư môn ${classItem.subject || ""}`}
+            </p>
+            <ClassStatusBadge status={classItem.status} />
+          </div>
+          <p className="mt-1 text-xs text-slate-400">Đăng lúc {formatDate(classItem.createdAt)}</p>
+        </div>
+
+        {/* Thông tin chính */}
+        <div className="space-y-2.5">
+          <InfoRow label="Môn học">
+            <span className="font-bold text-emerald-700">{classItem.subject || "—"}</span>
+          </InfoRow>
+          <InfoRow label="Khu vực">{region}</InfoRow>
+          <InfoRow label="Địa chỉ chi tiết">{classItem.locationLabel || "—"}</InfoRow>
+          <InfoRow label="SĐT phụ huynh">{classItem.contactPhone || "—"}</InfoRow>
+          <InfoRow label="Học viên">
+            {classItem.studentCount ?? "—"} học viên ({genderLabel(classItem.studentGender)})
+          </InfoRow>
+          <InfoRow label="Thời lượng">
+            {classItem.sessionsPerWeek} buổi/tuần · {classItem.minutesPerSession} phút/buổi
+          </InfoRow>
+          <InfoRow label="Ngày bắt đầu">{formatDate(classItem.startDate)}</InfoRow>
+          <InfoRow label="Yêu cầu gia sư">{formatClassTutorPrefsSummary(classItem)}</InfoRow>
+        </div>
+
+        {/* Học phí */}
+        <div className="space-y-1 rounded-xl border border-emerald-100 bg-emerald-50/60 p-3">
+          <p className="text-sm">
+            <span className="font-semibold text-slate-500">Học phí:</span>{" "}
+            <span className="font-bold text-emerald-700">
+              {formatPrice(classItem.feePerSession)}/buổi · {formatPrice(classItem.feePerMonth)}/tháng
+            </span>
+          </p>
+          {hasPromo && (
+            <p className="text-xs text-slate-500">
+              Mã ưu đãi <span className="font-semibold text-slate-700">{classItem.promoCode}</span> · giảm{" "}
+              {formatPrice(classItem.promoDiscount)} → còn{" "}
+              <span className="font-semibold text-emerald-700">{formatPrice(classItem.finalFeePerMonth)}/tháng</span>
+            </p>
+          )}
+          <p className="text-xs text-slate-500">
+            Phí nhận lớp (5% học phí tháng đầu):{" "}
+            <span className="font-semibold text-slate-700">{formatPrice(receivingFee)}</span>
+          </p>
+        </div>
+
+        {/* Lịch học yêu cầu */}
         <div>
           <span className="text-sm font-semibold text-slate-400">Lịch học yêu cầu:</span>
           <SlotChips slots={classItem.availabilitySlots} />
         </div>
+
+        {/* Mô tả chi tiết */}
         {classItem.description && (
           <div className="border-t border-slate-100 pt-3">
             <span className="mb-1 block text-sm font-semibold text-slate-400">Mô tả chi tiết:</span>
@@ -266,16 +330,10 @@ const TutorDetailModal = ({ tutor, classSubject, onClose }) => {
   );
 };
 
+// Mỗi lần mở lại được remount mới (qua prop key ở nơi sử dụng) nên state luôn sạch.
 const RejectDialog = ({ open, onConfirm, onCancel, loading }) => {
   const [reason, setReason] = useState("");
   const [error, setError] = useState("");
-
-  useEffect(() => {
-    if (!open) {
-      setReason("");
-      setError("");
-    }
-  }, [open]);
 
   if (!open) return null;
 
@@ -387,7 +445,7 @@ const ApplicationRow = ({ application, activeTab, actionLoading, onApprove, onRe
       </div>
 
       {/* Hành động / trạng thái */}
-      {activeTab === "pending" ? (
+      {activeTab === "selected" ? (
         <div className="flex items-center gap-2 border-t border-slate-100 pt-3 xl:border-l xl:border-t-0 xl:pl-3 xl:pt-0">
           <Button
             type="button"
@@ -434,6 +492,7 @@ const ClassApplicationsPage = () => {
   const dispatch = useDispatch();
   const {
     classApplications,
+    classApplicationsPagination,
     classApplicationsLoading,
     classApplicationsError,
     classApplicationActionLoading,
@@ -441,35 +500,60 @@ const ClassApplicationsPage = () => {
     classApplicationStatsLoading,
   } = useSelector((state) => state.admin);
 
-  const [activeTab, setActiveTab] = useState("pending");
+  const [activeTab, setActiveTab] = useState("selected");
+  const [page, setPage] = useState(1);
   const [rejectTarget, setRejectTarget] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [classModal, setClassModal] = useState(null);
   const [tutorModal, setTutorModal] = useState(null);
+
+  const totalPages = classApplicationsPagination?.totalPages || 1;
 
   useEffect(() => {
     dispatch(getClassApplicationStatsThunk());
   }, [dispatch]);
 
   useEffect(() => {
-    dispatch(getClassApplicationsThunk({ status: activeTab }));
+    dispatch(getClassApplicationsThunk({ status: activeTab, page, limit: PAGE_SIZE }));
+  }, [dispatch, activeTab, page]);
+
+  const reload = (targetPage = page) =>
+    dispatch(getClassApplicationsThunk({ status: activeTab, page: targetPage, limit: PAGE_SIZE }));
+
+  // Sau khi duyệt/từ chối: nếu vừa xử lý item cuối của trang thì lùi 1 trang, ngược lại tải lại trang hiện tại
+  const reloadAfterAction = () => {
+    if (classApplications.length <= 1 && page > 1) setPage(page - 1);
+    else reload();
+  };
+
+  const handleTab = (tab) => {
+    setActiveTab(tab);
+    setPage(1);
     setSearchQuery("");
-  }, [dispatch, activeTab]);
+  };
+
+  const handlePageChange = (next) => {
+    setPage(next);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   const handleRefresh = () => {
     dispatch(getClassApplicationStatsThunk());
-    dispatch(getClassApplicationsThunk({ status: activeTab }));
+    reload();
   };
 
   const handleApprove = (id) => {
-    dispatch(approveClassApplicationThunk(id));
+    dispatch(approveClassApplicationThunk(id)).then((r) => {
+      if (!r.error) reloadAfterAction();
+    });
   };
 
   const handleRejectOpen = (id) => setRejectTarget(id);
 
   const handleRejectConfirm = (rejectionReason) => {
-    dispatch(rejectClassApplicationThunk({ id: rejectTarget, rejectionReason })).then(() => {
+    dispatch(rejectClassApplicationThunk({ id: rejectTarget, rejectionReason })).then((r) => {
       setRejectTarget(null);
+      if (!r.error) reloadAfterAction();
     });
   };
 
@@ -485,13 +569,13 @@ const ClassApplicationsPage = () => {
   }, [classApplications, searchQuery]);
 
   const statCount = {
-    pending: classApplicationStats.pending,
+    selected: classApplicationStats.selected,
     approved: classApplicationStats.approved,
     rejected: classApplicationStats.rejected,
   };
 
   const emptyMessages = {
-    pending: { title: "Không có đơn nào đang chờ", sub: "Tất cả yêu cầu nhận lớp đã được xử lý." },
+    selected: { title: "Không có đơn nào chờ duyệt", sub: "Đơn gia sư người đăng đã chọn sẽ hiển thị ở đây." },
     approved: { title: "Chưa có đơn nào được duyệt", sub: "Các đơn được duyệt sẽ hiển thị ở đây." },
     rejected: { title: "Chưa có đơn nào bị từ chối", sub: "Các đơn bị từ chối sẽ hiển thị ở đây." },
   };
@@ -504,7 +588,7 @@ const ClassApplicationsPage = () => {
           <div>
             <h1 className="text-2xl font-bold text-slate-900">Quản lý duyệt nhận lớp</h1>
             <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-600">
-              Mỗi dòng hiển thị mã lớp và gia sư ứng tuyển. Bấm để xem chi tiết bài đăng hoặc hồ sơ gia sư trước khi duyệt.
+              Mỗi dòng là gia sư đã được người đăng chọn, đang chờ bạn duyệt. Bấm để xem chi tiết bài đăng hoặc hồ sơ gia sư trước khi duyệt.
             </p>
           </div>
           <Button
@@ -526,7 +610,7 @@ const ClassApplicationsPage = () => {
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-3">
-        <StatCard label="Chờ duyệt" count={statCount.pending} color="amber" loading={classApplicationStatsLoading} />
+        <StatCard label="Chờ duyệt" count={statCount.selected} color="amber" loading={classApplicationStatsLoading} />
         <StatCard label="Đã duyệt" count={statCount.approved} color="emerald" loading={classApplicationStatsLoading} />
         <StatCard label="Từ chối" count={statCount.rejected} color="rose" loading={classApplicationStatsLoading} />
       </div>
@@ -541,7 +625,7 @@ const ClassApplicationsPage = () => {
               <button
                 key={tab.key}
                 type="button"
-                onClick={() => setActiveTab(tab.key)}
+                onClick={() => handleTab(tab.key)}
                 className={`flex flex-1 items-center justify-center gap-2 border-b-2 px-4 py-3 text-sm font-medium transition-colors ${
                   isActive
                     ? style.active
@@ -619,6 +703,13 @@ const ClassApplicationsPage = () => {
             </div>
           )}
         </div>
+
+        {/* Phân trang (ẩn khi đang tìm kiếm vì tìm kiếm chỉ lọc trong trang hiện tại) */}
+        {!classApplicationsLoading && !searchQuery && totalPages > 1 && (
+          <div className="border-t border-slate-100 px-4 py-4">
+            <Pagination currentPage={page} totalPages={totalPages} onPageChange={handlePageChange} />
+          </div>
+        )}
       </div>
 
       {classModal && <ClassDetailModal classItem={classModal} onClose={() => setClassModal(null)} />}
@@ -631,6 +722,7 @@ const ClassApplicationsPage = () => {
       )}
 
       <RejectDialog
+        key={rejectTarget || "reject-dialog"}
         open={!!rejectTarget}
         loading={classApplicationActionLoading === rejectTarget}
         onConfirm={handleRejectConfirm}

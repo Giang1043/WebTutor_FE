@@ -6,5 +6,9 @@ export { default as ClassApplicationsPage } from "./pages/ClassApplicationsPage"
 export { default as AdminClassesPage } from "./pages/AdminClassesPage";
 export { default as AdminTrashPage } from "./pages/AdminTrashPage";
 export { default as AdminPromosPage } from "./pages/AdminPromosPage";
+export { default as AdminSubjectsPage } from "./pages/AdminSubjectsPage";
 export { default as AdminSettingsPage } from "./pages/AdminSettingsPage";
+export { default as AdminProfileChangesPage } from "./pages/AdminProfileChangesPage";
+export { default as AdminApplicationCancellationsPage } from "./pages/AdminApplicationCancellationsPage";
+export { default as AdminReviewsPage } from "./pages/AdminReviewsPage";
 export { default as adminReducer } from "./store/adminSlice";

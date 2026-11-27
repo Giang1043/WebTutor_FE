@@ -8,6 +8,9 @@ import {
   fetchClassFeedThunk,
   fetchMyPostsThunk,
   applyForClassThunk,
+  fetchApplicantsThunk,
+  selectApplicantThunk,
+  cancelApplicationThunk,
 } from "./classThunks";
 
 const initialState = {
@@ -24,6 +27,15 @@ const initialState = {
   },
   detail: null,
   myClasses: [],
+  myClassesPagination: {
+    page: 1,
+    limit: 10,
+    totalItems: 0,
+    totalPages: 1,
+    hasNextPage: false,
+    hasPrevPage: false,
+  },
+  myClassesCounts: { all: 0, pending: 0, approved: 0, rejected: 0 },
   loadingMyClasses: false,
   feed: [],
   feedPagination: {
@@ -36,7 +48,12 @@ const initialState = {
   },
   feedSubjects: [],
   feedNewCount: 0,
+  feedPersonalization: null,
   loadingFeed: false,
+  // Người đăng xem & chọn gia sư ứng tuyển bài đăng của mình
+  applicants: [],
+  loadingApplicants: false,
+  selectingApplicant: false,
   myPosts: [],
   myPostsPagination: {
     page: 1,
@@ -53,6 +70,7 @@ const initialState = {
   loadingDetail: false,
   applying: false,
   applyError: null,
+  cancellingApplication: false,
   error: null,
 };
 
@@ -64,6 +82,10 @@ const classSlice = createSlice({
       state.quote = null;
       state.latestCreated = null;
       state.error = null;
+    },
+    clearApplicants: (state) => {
+      state.applicants = [];
+      state.loadingApplicants = false;
     },
   },
   extraReducers: (builder) => {
@@ -134,7 +156,9 @@ const classSlice = createSlice({
       })
       .addCase(fetchMyClassesThunk.fulfilled, (state, action) => {
         state.loadingMyClasses = false;
-        state.myClasses = action.payload || [];
+        state.myClasses = action.payload.applications || [];
+        if (action.payload.pagination) state.myClassesPagination = action.payload.pagination;
+        if (action.payload.counts) state.myClassesCounts = action.payload.counts;
       })
       .addCase(fetchMyClassesThunk.rejected, (state, action) => {
         state.loadingMyClasses = false;
@@ -149,10 +173,32 @@ const classSlice = createSlice({
         state.feed = action.payload.classes || [];
         state.feedSubjects = action.payload.subjects || [];
         state.feedNewCount = action.payload.newCount || 0;
+        state.feedPersonalization = action.payload.personalization || null;
         if (action.payload.pagination) state.feedPagination = action.payload.pagination;
       })
       .addCase(fetchClassFeedThunk.rejected, (state, action) => {
         state.loadingFeed = false;
+        state.error = action.payload;
+      })
+      .addCase(fetchApplicantsThunk.pending, (state) => {
+        state.loadingApplicants = true;
+      })
+      .addCase(fetchApplicantsThunk.fulfilled, (state, action) => {
+        state.loadingApplicants = false;
+        state.applicants = action.payload.applicants || [];
+      })
+      .addCase(fetchApplicantsThunk.rejected, (state, action) => {
+        state.loadingApplicants = false;
+        state.error = action.payload;
+      })
+      .addCase(selectApplicantThunk.pending, (state) => {
+        state.selectingApplicant = true;
+      })
+      .addCase(selectApplicantThunk.fulfilled, (state) => {
+        state.selectingApplicant = false;
+      })
+      .addCase(selectApplicantThunk.rejected, (state, action) => {
+        state.selectingApplicant = false;
         state.error = action.payload;
       })
       .addCase(fetchMyPostsThunk.pending, (state) => {
@@ -179,8 +225,21 @@ const classSlice = createSlice({
         state.applying = false;
         state.applyError = action.payload;
       });
+
+    builder
+      .addCase(cancelApplicationThunk.pending, (state) => {
+        state.cancellingApplication = true;
+        state.error = null;
+      })
+      .addCase(cancelApplicationThunk.fulfilled, (state) => {
+        state.cancellingApplication = false;
+      })
+      .addCase(cancelApplicationThunk.rejected, (state, action) => {
+        state.cancellingApplication = false;
+        state.error = action.payload;
+      });
   },
 });
 
-export const { clearClassFlow } = classSlice.actions;
+export const { clearClassFlow, clearApplicants } = classSlice.actions;
 export default classSlice.reducer;

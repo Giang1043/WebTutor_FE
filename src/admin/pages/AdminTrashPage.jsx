@@ -6,11 +6,14 @@ import {
   Loader2,
   RefreshCw,
   RotateCcw,
+  Star,
   Ticket,
   Trash2,
   Users,
   X,
 } from "lucide-react";
+
+import { StarRating } from "@/features/reviews";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -20,27 +23,25 @@ import {
   purgeTrashItemThunk,
 } from "@/admin/store/adminThunks";
 import { formatPrice, formatDateTime } from "@/features/classes/utils/classFormatters";
-
-const PAGE_SIZE = 10;
+import {
+  ADMIN_PAGE_SIZE as PAGE_SIZE,
+  TRASH_ROLE_LABEL as ROLE_LABEL,
+  TRASH_PURGE_COPY as PURGE_COPY,
+  TRASH_SECONDARY_HEADER as SECONDARY_HEADER,
+} from "@/admin/constants";
 
 const TABS = [
   { key: "users", label: "Người dùng", icon: Users },
   { key: "classes", label: "Bài đăng", icon: BookOpen },
   { key: "promos", label: "Mã ưu đãi", icon: Ticket },
+  { key: "reviews", label: "Đánh giá", icon: Star },
 ];
-
-const ROLE_LABEL = { admin: "Quản trị", tutor: "Gia sư", user: "Người dùng" };
-
-const PURGE_COPY = {
-  users: "Tài khoản sẽ bị xóa vĩnh viễn khỏi hệ thống và không thể khôi phục.",
-  classes: "Bài đăng cùng toàn bộ đơn nhận lớp liên quan sẽ bị xóa vĩnh viễn.",
-  promos: "Mã ưu đãi sẽ bị xóa vĩnh viễn khỏi hệ thống.",
-};
 
 // Mô tả ngắn của item theo loại — dùng trong modal xác nhận xóa vĩnh viễn
 const describeItem = (type, item) => {
   if (type === "users") return item.fullName || item.email;
   if (type === "classes") return `#${item.classCode} · ${item.subject}`;
+  if (type === "reviews") return `${item.rating}★ từ ${item.reviewerName}`;
   return item.code;
 };
 
@@ -120,6 +121,17 @@ const PrimaryCell = ({ type, item }) => {
       </div>
     );
   }
+  if (type === "reviews") {
+    return (
+      <div>
+        <div className="flex items-center gap-2">
+          <StarRating value={item.rating} size={13} />
+          <span className="text-xs text-slate-500">từ {item.reviewerName}</span>
+        </div>
+        <p className="mt-0.5 max-w-xs truncate text-xs text-slate-500">{item.comment}</p>
+      </div>
+    );
+  }
   return (
     <div>
       <p className="text-sm font-bold text-slate-800">{item.code}</p>
@@ -139,6 +151,9 @@ const SecondaryCell = ({ type, item }) => {
       </span>
     );
   }
+  if (type === "reviews") {
+    return <span className="text-sm text-slate-600">{item.tutorName}</span>;
+  }
   return (
     <span className="text-sm text-slate-600">
       {item.discountType === "percent"
@@ -147,8 +162,6 @@ const SecondaryCell = ({ type, item }) => {
     </span>
   );
 };
-
-const SECONDARY_HEADER = { users: "Vai trò", classes: "Người đăng", promos: "Giảm giá" };
 
 const AdminTrashPage = () => {
   const dispatch = useDispatch();

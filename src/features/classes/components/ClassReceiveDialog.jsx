@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, Loader2, LogIn, Send, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, IdCard, Loader2, LogIn, Send, X } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
@@ -24,11 +24,20 @@ const DIALOG_CONFIG = {
     primaryLabel: "Đăng ký làm gia sư",
     primaryTo: "/register-tutor",
   },
+  documentsRequired: {
+    icon: IdCard,
+    iconClassName: "bg-amber-50 text-amber-700 border-amber-100",
+    title: "Cần bổ sung hồ sơ chứng thực",
+    description:
+      "Bạn chưa cập nhật ảnh CCCD và thẻ sinh viên/bằng cấp. Vui lòng bổ sung hồ sơ chứng thực rồi gửi cho admin duyệt trước khi nhận lớp.",
+    primaryLabel: "Bổ sung hồ sơ ngay",
+    primaryTo: "/profile?section=documents",
+  },
   confirm: {
     icon: Send,
     iconClassName: "bg-emerald-50 text-emerald-700 border-emerald-100",
-    title: "Xác nhận gửi yêu cầu nhận lớp",
-    description: "Admin sẽ xem xét và duyệt yêu cầu của bạn. Bạn sẽ nhận được thông báo khi có kết quả.",
+    title: "Xác nhận ứng tuyển lớp này",
+    description: "Người đăng sẽ xem hồ sơ và chọn gia sư phù hợp. Nếu được chọn, đơn sẽ chuyển admin duyệt và bạn sẽ nhận thông báo.",
   },
   mismatch: {
     icon: AlertTriangle,
@@ -39,8 +48,8 @@ const DIALOG_CONFIG = {
   submitted: {
     icon: CheckCircle2,
     iconClassName: "bg-emerald-50 text-emerald-700 border-emerald-100",
-    title: "Đã gửi yêu cầu thành công",
-    description: "Yêu cầu nhận lớp của bạn đã được gửi. Vui lòng chờ admin xét duyệt — bạn sẽ nhận thông báo khi có kết quả.",
+    title: "Đã ứng tuyển thành công",
+    description: "Đơn ứng tuyển của bạn đã được gửi tới người đăng. Nếu được chọn, admin sẽ duyệt lớp — bạn sẽ nhận thông báo khi có kết quả.",
   },
 };
 
@@ -186,7 +195,7 @@ const ClassReceiveDialog = ({
             </Button>
           )}
 
-          {(type === "login" || type === "tutorRequired") && (
+          {(type === "login" || type === "tutorRequired" || type === "documentsRequired") && (
             <Button
               asChild
               className="h-10 rounded-lg bg-[#1e3a5f] px-5 font-semibold text-white hover:bg-[#16304f]"
