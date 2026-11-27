@@ -28,41 +28,16 @@ import {
   updateAdminUserThunk,
 } from "@/admin/store/adminThunks";
 import { adminUserSchema } from "@/admin/schemas/adminUserSchema";
+import { scrollToFirstError } from "@/lib/formErrors";
 import useAuth from "@/features/auth/hooks/useAuth";
-
-const ROLE_OPTIONS = [
-  { value: "", label: "Tất cả vai trò" },
-  { value: "user", label: "Học viên" },
-  { value: "tutor", label: "Gia sư" },
-  { value: "admin", label: "Quản trị viên" },
-];
-
-const STATUS_OPTIONS = [
-  { value: "", label: "Tất cả trạng thái" },
-  { value: "true", label: "Đang hoạt động" },
-  { value: "false", label: "Đã khóa" },
-];
-
-const VERIFY_OPTIONS = [
-  { value: "", label: "Tất cả xác thực" },
-  { value: "true", label: "Đã xác thực" },
-  { value: "false", label: "Chưa xác thực" },
-];
-
-const ROLE_CONFIG = {
-  user: { label: "Học viên", className: "bg-blue-50 text-blue-700 border-blue-200" },
-  tutor: { label: "Gia sư", className: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-  admin: { label: "Quản trị viên", className: "bg-rose-50 text-rose-700 border-rose-200" },
-};
-
-const DEFAULT_FILTERS = {
-  keyword: "",
-  role: "",
-  isActive: "",
-  isVerified: "",
-};
-
-const PAGE_SIZE = 10;
+import {
+  ADMIN_PAGE_SIZE as PAGE_SIZE,
+  USER_ROLE_OPTIONS as ROLE_OPTIONS,
+  USER_STATUS_OPTIONS as STATUS_OPTIONS,
+  USER_VERIFY_OPTIONS as VERIFY_OPTIONS,
+  USER_ROLE_CONFIG as ROLE_CONFIG,
+  USER_DEFAULT_FILTERS as DEFAULT_FILTERS,
+} from "@/admin/constants";
 
 const formatDate = (value) => {
   if (!value) return "—";
@@ -227,7 +202,7 @@ const EditUserModal = ({ user, onClose, onSubmit, loading }) => {
       dateOfBirth: values.dateOfBirth || null,
       isVerified: values.isVerified === "true",
     });
-  });
+  }, scrollToFirstError);
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/50 px-4 backdrop-blur-sm">
