@@ -24,6 +24,7 @@ import {
   Link,
   useLocation,
   useParams,
+  Navigate,
 } from 'react-router-dom';
 
 import { Button } from '@/components/ui/button';
@@ -39,13 +40,15 @@ import {
   formatStudentGender,
 } from '@/features/classes/utils/classFormatters';
 import useAuth from '@/features/auth/hooks/useAuth';
+import tutorService from '@/features/tutors/services/tutorService';
 import { toast } from 'sonner';
+import AOS from 'aos';
 
 const NewClassDetailPage = () => {
   const { id } = useParams();
   const location = useLocation();
   const dispatch = useDispatch();
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, user, loading } = useAuth();
   const { detail, loadingDetail, applying } = useSelector((state) => state.classes);
   const [relatedClasses, setRelatedClasses] = useState([]);
   const [latestClasses, setLatestClasses] = useState([]);
@@ -58,9 +61,14 @@ const NewClassDetailPage = () => {
     if (id) dispatch(fetchClassDetailThunk(id));
   }, [dispatch, id]);
 
+  // Tính lại vị trí animation sau khi chi tiết lớp được tải
+  useEffect(() => {
+    if (detail?._id) AOS.refresh();
+  }, [detail?._id]);
+
   const mapClassToListItem = (item) => ({
     id: item._id,
-    title: item.summary || `Cần Gia Sư Môn ${item.subject} - ${item.locationLabel}`,
+    title: `${item.subject} - ${item.summary || `Cần Gia Sư tại ${item.districtName || ''}, ${item.provinceName || ''}`}`,
   });
 
   useEffect(() => {
@@ -109,7 +117,7 @@ const NewClassDetailPage = () => {
     };
   }, [detail?._id, detail?.provinceCode, detail?.subject]);
 
-  if (loadingDetail) {
+  if (loadingDetail || loading) {
     return (
       <div className="mx-auto max-w-[1360px] px-6 py-8">
         <div className="grid grid-cols-12 gap-6">
@@ -137,6 +145,10 @@ const NewClassDetailPage = () => {
     );
   }
 
+  if (!isAuthenticated) {
+    return <Navigate to="/login" state={{ from: returnTo }} replace />;
+  }
+
   if (!detail) {
     return (
       <div className="mx-auto max-w-[1360px] px-6 py-8">
@@ -147,7 +159,11 @@ const NewClassDetailPage = () => {
     );
   }
 
-  const handleReceiveClass = () => {
+  const isOwnPost = isAuthenticated && user?.id != null && detail.createdBy === user.id;
+
+  const handleReceiveClass = async () => {
+    if (isOwnPost) return;
+
     if (!isAuthenticated) {
       setReceiveDialog({ open: true, type: "login", classItem: detail });
       return;
@@ -158,7 +174,46 @@ const NewClassDetailPage = () => {
       return;
     }
 
-    setReceiveDialog({ open: true, type: "confirm", classItem: detail });
+    try {
+      const response = await tutorService.getProfile();
+      const tutorProfile = response.data?.data?.tutor;
+      const registeredSubjects = tutorProfile?.subjects || [];
+      const mismatchReasons = [];
+
+      if (!registeredSubjects.includes(detail.subject)) {
+        mismatchReasons.push(`Môn học: Lớp yêu cầu môn "${detail.subject}" nhưng bạn chưa đăng ký dạy môn này.`);
+      }
+
+      if (detail.tutorGenderPref && detail.tutorGenderPref !== 'any' && user?.gender !== detail.tutorGenderPref) {
+        const requiredGender = detail.tutorGenderPref === 'male' ? 'Nam' : 'Nữ';
+        const currentGender = user?.gender === 'male' ? 'Nam' : user?.gender === 'female' ? 'Nữ' : 'Chưa cập nhật';
+        mismatchReasons.push(`Giới tính: Lớp yêu cầu gia sư giới tính "${requiredGender}" nhưng giới tính tài khoản của bạn là "${currentGender}".`);
+      }
+
+      if (detail.tutorLevelPref && detail.tutorLevelPref !== 'any') {
+        const requiredLevel = detail.tutorLevelPref === 'student' ? 'Sinh viên' : 'Giáo viên';
+        const currentOccupation = tutorProfile?.occupationStatus;
+        const currentLevel = currentOccupation === 'student' ? 'Sinh viên' : currentOccupation === 'teacher' ? 'Giáo viên' : 'Khác';
+        if (detail.tutorLevelPref !== currentOccupation) {
+          mismatchReasons.push(`Trình độ: Lớp yêu cầu gia sư là "${requiredLevel}" nhưng trình độ của bạn là "${currentLevel}".`);
+        }
+      }
+
+      if (mismatchReasons.length > 0) {
+        setReceiveDialog({
+          open: true,
+          type: "mismatch",
+          classItem: detail,
+          tutorSubjects: registeredSubjects,
+          mismatchReasons,
+        });
+        return;
+      }
+      setReceiveDialog({ open: true, type: "confirm", classItem: detail, tutorSubjects: registeredSubjects });
+    } catch (err) {
+      console.error("Failed to check tutor profile conditions", err);
+      setReceiveDialog({ open: true, type: "confirm", classItem: detail });
+    }
   };
 
   const handleConfirmApply = async () => {
@@ -175,11 +230,11 @@ const NewClassDetailPage = () => {
     <div className="mx-auto max-w-[1360px] px-6 py-8">
       <div className="grid grid-cols-12 gap-6">
         <section className="col-span-9 space-y-5">
-          <article className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <article className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm" data-aos="fade-up">
             <div className="flex items-start justify-between gap-6">
               <div className="min-w-0">
                 <h1 className="text-3xl font-semibold leading-tight text-slate-900">
-                  {detail.summary || `Cần Gia Sư Môn ${detail.subject} - ${detail.locationLabel}`}
+                  {detail.subject} - {detail.summary || `Cần Gia Sư tại ${detail.districtName || ''}, ${detail.provinceName || ''}`}
                 </h1>
                 <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-slate-500">
                   <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700">
@@ -199,14 +254,20 @@ const NewClassDetailPage = () => {
                 <p className="mt-1 text-xs text-emerald-700/80">
                   Ước tính/tháng: {formatPrice(detail.feePerMonth)}
                 </p>
-                <Button
-                  type="button"
-                  className="mt-3 h-11 w-full rounded-lg bg-emerald-600 text-sm font-semibold text-white hover:bg-emerald-700"
-                  onClick={handleReceiveClass}
-                >
-                  Nhận lớp ngay
-                  <ArrowRight className="ml-1.5 h-4 w-4" />
-                </Button>
+                {isOwnPost ? (
+                  <div className="mt-3 flex h-11 w-full items-center justify-center rounded-lg border border-slate-200 bg-slate-100 text-sm font-medium text-slate-500">
+                    Bài đăng của bạn
+                  </div>
+                ) : (
+                  <Button
+                    type="button"
+                    className="mt-3 h-11 w-full rounded-lg bg-emerald-600 text-sm font-semibold text-white hover:bg-emerald-700"
+                    onClick={handleReceiveClass}
+                  >
+                    Nhận lớp ngay
+                    <ArrowRight className="ml-1.5 h-4 w-4" />
+                  </Button>
+                )}
               </div>
             </div>
 
@@ -262,7 +323,7 @@ const NewClassDetailPage = () => {
               </div>
               <div className="flex items-start gap-2">
                 <FileText className="mt-0.5 h-4 w-4 text-slate-400" />
-                <p>SĐT liên hệ: {detail.contactPhone || "-"}</p>
+                <p>SĐT liên hệ: {detail.contactPhone || "Được ẩn để bảo mật (chỉ hiển thị khi nhận lớp)"}</p>
               </div>
             </div>
 
@@ -297,7 +358,7 @@ const NewClassDetailPage = () => {
             </div>
           </article>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4" data-aos="fade-up" data-aos-delay="100">
             <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="mb-3 flex items-center justify-between">
                 <h3 className="text-lg font-semibold text-slate-900">Các lớp tương tự</h3>
@@ -348,7 +409,7 @@ const NewClassDetailPage = () => {
           </div>
         </section>
 
-        <aside className="col-span-3 space-y-4">
+        <aside className="col-span-3 space-y-4" data-aos="fade-left" data-aos-delay="100">
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
               Thông tin nhanh
@@ -427,6 +488,8 @@ const NewClassDetailPage = () => {
         onClose={() => setReceiveDialog((prev) => ({ ...prev, open: false }))}
         onConfirm={handleConfirmApply}
         applying={applying}
+        tutorSubjects={receiveDialog.tutorSubjects}
+        mismatchReasons={receiveDialog.mismatchReasons}
       />
     </div>
   );

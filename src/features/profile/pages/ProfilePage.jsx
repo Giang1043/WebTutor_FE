@@ -12,6 +12,7 @@ import ProfilePersonalCard from "@/features/profile/components/ProfilePersonalCa
 import ProfileViewDetails from "@/features/profile/components/ProfileViewDetails";
 import ProfileEditForm from "@/features/profile/components/ProfileEditForm";
 import TutorInfoCard from "@/features/profile/components/TutorInfoCard";
+import ProfileMenu from "@/features/profile/components/ProfileMenu";
 
 const ProfilePage = () => {
   const { user, loading } = useAuth();
@@ -91,16 +92,19 @@ const ProfilePage = () => {
   return (
     <div className="mx-auto max-w-5xl px-4 py-6">
       <div className={`grid gap-6 ${isTutor ? "lg:grid-cols-[300px_1fr]" : "lg:grid-cols-[300px_1fr]"}`}>
-        <ProfileSidebar
-          user={user}
-          displayAvatar={displayAvatar}
-          isUploadingAvatar={isUploadingAvatar}
-          fileInputRef={fileInputRef}
-          onAvatarChange={handleAvatarChange}
-          onPickAvatar={() => fileInputRef.current?.click()}
-        />
+        <div className="space-y-4" data-aos="fade-right">
+          <ProfileSidebar
+            user={user}
+            displayAvatar={displayAvatar}
+            isUploadingAvatar={isUploadingAvatar}
+            fileInputRef={fileInputRef}
+            onAvatarChange={handleAvatarChange}
+            onPickAvatar={() => fileInputRef.current?.click()}
+          />
+          <ProfileMenu isTutor={isTutor} />
+        </div>
 
-        <div className="space-y-6">
+        <div className="space-y-6" data-aos="fade-up" data-aos-delay="100">
           <ProfilePersonalCard isEditing={isEditing} onEdit={handleEdit}>
             {isEditing ? (
               <ProfileEditForm

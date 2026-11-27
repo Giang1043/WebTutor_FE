@@ -11,8 +11,11 @@ import {
   FindTutorRequestPage,
   NewClassesPage,
   NewClassDetailPage,
+  MyClassesPage,
+  MyPostsPage,
 } from "@/features/classes";
-import { AdminLayout, TutorApprovalPage, AdminDashboardPage, AdminUsersPage, ClassApplicationsPage } from "@/admin";
+import NotificationsPage from "@/features/notifications/pages/NotificationsPage";
+import { AdminLayout, TutorApprovalPage, AdminDashboardPage, AdminUsersPage, ClassApplicationsPage, AdminClassesPage, AdminPromosPage, AdminTrashPage, AdminSettingsPage } from "@/admin";
 
 import {
   LoginPage,
@@ -74,6 +77,21 @@ const router = createBrowserRouter([
         element: <MainLayout />,
         children: [
           { path: "/profile", element: <ProfilePage /> },
+          { path: "/notifications", element: <NotificationsPage /> },
+          { path: "/my-posts", element: <MyPostsPage /> },
+        ],
+      },
+    ],
+  },
+
+  // Protected routes dành riêng cho gia sư
+  {
+    element: <ProtectedRoute allowedRoles={["tutor"]} />,
+    children: [
+      {
+        element: <MainLayout />,
+        children: [
+          { path: "/my-classes", element: <MyClassesPage /> },
         ],
       },
     ],
@@ -87,6 +105,10 @@ const router = createBrowserRouter([
       { path: "/admin/users", element: <AdminUsersPage /> },
       { path: "/admin/tutors", element: <TutorApprovalPage /> },
       { path: "/admin/class-applications", element: <ClassApplicationsPage /> },
+      { path: "/admin/classes", element: <AdminClassesPage /> },
+      { path: "/admin/promos", element: <AdminPromosPage /> },
+      { path: "/admin/trash", element: <AdminTrashPage /> },
+      { path: "/admin/settings", element: <AdminSettingsPage /> },
     ],
   },
 ]);
