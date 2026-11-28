@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { tutorSchema } from "@/features/tutors/schemas/tutorSchema";
 import { scrollToFirstError } from "@/lib/formErrors";
 import { registerTutorThunk } from "@/features/tutors/store/tutorThunks";
+import { fetchNotificationsThunk } from "@/features/notifications/store/notificationThunks";
 import { OCCUPATION_STATUS_OPTIONS } from "@/features/tutors/constants";
 import useSubjects from "@/hooks/useSubjects";
 
@@ -53,6 +54,7 @@ const TutorRegistrationForm = ({ onSuccess }) => {
       studentCardFrontImage: "",
       studentCardBackImage: "",
       certificateImages: [],
+      publicCertificateImages: [],
     },
   });
 
@@ -86,7 +88,6 @@ const TutorRegistrationForm = ({ onSuccess }) => {
     }
     const result = await dispatch(registerTutorThunk(data));
     if (!result.error) {
-      const { fetchNotificationsThunk } = await import("@/features/notifications/store/notificationThunks");
       dispatch(fetchNotificationsThunk());
       toast.success("Đăng ký thành công! Vui lòng chờ admin xét duyệt.");
       onSuccess?.();
@@ -331,6 +332,25 @@ const TutorRegistrationForm = ({ onSuccess }) => {
               />
             </div>
           )}
+        </div>
+
+        {/* Bằng cấp công khai — tùy chọn, hiển thị cho mọi người (khác ảnh chứng thực riêng tư) */}
+        <div>
+          <SectionTitle icon={GraduationCap} title="Bằng cấp công khai" />
+          <FormField
+            control={form.control}
+            name="publicCertificateImages"
+            render={({ field, fieldState }) => (
+              <DocumentMultiUpload
+                label="Ảnh bằng cấp / chứng chỉ muốn hiển thị"
+                hint="Không bắt buộc. Những ảnh này sẽ hiển thị công khai ở trang hồ sơ và trang chi tiết gia sư cho mọi người xem — bỏ trống nếu bạn không muốn chia sẻ."
+                max={5}
+                value={field.value}
+                onChange={field.onChange}
+                error={fieldState.error?.message}
+              />
+            )}
+          />
         </div>
 
         {/* === PHẦN 2: THÔNG TIN GIẢNG DẠY === */}

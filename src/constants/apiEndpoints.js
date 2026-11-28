@@ -40,7 +40,6 @@ const API_ENDPOINTS = {
     CLASS_APPLICATION_APPROVE: (id) => `/admin/class-applications/${id}/approve`,
     CLASS_APPLICATION_REJECT: (id) => `/admin/class-applications/${id}/reject`,
     CLASSES: "/admin/classes",
-    CLASS_DETAIL: (id) => `/admin/classes/${id}`,
     CLASS_DELETE: (id) => `/admin/classes/${id}`,
     TRASH_COUNTS: "/admin/trash/counts",
     TRASH_LIST: (type) => `/admin/trash/${type}`,
@@ -127,6 +126,10 @@ const API_ENDPOINTS = {
     CONVERSATION_SEND: (id) => `/chat/conversations/${id}/messages`,
     CONVERSATION_SEND_IMAGE: (id) => `/chat/conversations/${id}/images`,
     CONVERSATION_READ: (id) => `/chat/conversations/${id}/read`,
+  },
+  CHATBOT: {
+    // Trợ lý ảo — 1 endpoint hỏi/đáp, cho cả khách lẫn người đã đăng nhập.
+    ASK: "/chatbot",
   },
 };
 
