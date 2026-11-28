@@ -14,12 +14,12 @@ import {
   MyClassesPage,
   MyPostsPage,
   ClassInvitationsPage,
+  ContractTemplatePage,
 } from "@/features/classes";
 import NotificationsPage from "@/features/notifications/pages/NotificationsPage";
 import MyVouchersPage from "@/features/vouchers/pages/MyVouchersPage";
 import { MyReviewsPage } from "@/features/reviews";
-import { AdminLayout, TutorApprovalPage, AdminDashboardPage, AdminUsersPage, ClassApplicationsPage, AdminClassesPage, AdminPromosPage, AdminSubjectsPage, AdminTrashPage, AdminSettingsPage, AdminProfileChangesPage, AdminApplicationCancellationsPage, AdminReviewsPage } from "@/admin";
-import { AdminMessagesPage } from "@/features/chat";
+import { AdminLayout, TutorApprovalPage, AdminDashboardPage, AdminUsersPage, ClassApplicationsPage, AdminClassesPage, AdminPromosPage, AdminSubjectsPage, AdminTrashPage, AdminSettingsPage, AdminProfileChangesPage, AdminApplicationCancellationsPage, AdminReviewsPage, AdminNotificationsPage, AdminMessagesPage } from "@/admin";
 
 import {
   LoginPage,
@@ -62,6 +62,7 @@ const router = createBrowserRouter([
       { path: "/find-tutor", element: <FindTutorRequestPage /> },
       { path: "/classes", element: <NewClassesPage /> },
       { path: "/classes/:id", element: <NewClassDetailPage /> },
+      { path: "/contract-template", element: <ContractTemplatePage /> },
     ],
   },
 
@@ -110,6 +111,7 @@ const router = createBrowserRouter([
     element: <AdminLayout />,
     children: [
       { path: "/admin", element: <AdminDashboardPage /> },
+      { path: "/admin/notifications", element: <AdminNotificationsPage /> },
       { path: "/admin/users", element: <AdminUsersPage /> },
       { path: "/admin/messages", element: <AdminMessagesPage /> },
       { path: "/admin/tutors", element: <TutorApprovalPage /> },
