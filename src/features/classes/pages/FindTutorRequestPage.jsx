@@ -25,6 +25,7 @@ import {
   ShieldCheck,
   SunMedium,
   Sunset,
+  Ticket,
   Trash2,
   UserRound,
   Users,
@@ -39,13 +40,14 @@ import {
   useDispatch,
   useSelector,
 } from 'react-redux';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import SearchableSelect from '@/features/classes/components/SearchableSelect';
 import WeeklyHourGrid from '@/features/classes/components/WeeklyHourGrid';
+import tutorService from '@/features/tutors/services/tutorService';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
@@ -58,6 +60,7 @@ import classService from '@/features/classes/services/classService';
 import { clearClassFlow } from '@/features/classes/store/classSlice';
 import {
   createClassThunk,
+  createInvitedClassThunk,
   quoteClassThunk,
   updateClassThunk,
 } from '@/features/classes/store/classThunks';
@@ -71,10 +74,16 @@ import {
   saveClassRequestFormDraft,
 } from '@/features/classes/utils/classRequestFormDraftStorage';
 import locationService from '@/features/tutors/services/locationService';
+import { fetchMyVouchersThunk } from '@/features/vouchers/store/voucherThunks';
 import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
 
 
+
+// Map tình trạng nghề nghiệp gia sư → mức trình độ bài đăng yêu cầu (đồng bộ với BE).
+const OCCUPATION_TO_LEVEL_PREF = { student: 'student', graduated: 'teacher', teacher: 'teacher' };
+const TUTOR_GENDER_PREF_LABEL = { any: 'Không yêu cầu', male: 'Nam', female: 'Nữ' };
+const TUTOR_LEVEL_PREF_LABEL = { any: 'Không yêu cầu', student: 'Sinh viên', teacher: 'Giáo viên' };
 
 const BOOKING_PROGRESS_FIELD_NAMES = [
   'contactPhone',
@@ -513,10 +522,11 @@ const CustomMinutesField = ({ value, onChange, minuteOptions = [] }) => {
   );
 };
 
-const FindTutorRequestFormContent = ({ pricingConfig, editClass = null }) => {
+const FindTutorRequestFormContent = ({ pricingConfig, editClass = null, invitedTutor = null }) => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const isEdit = Boolean(editClass);
+  const isInvite = Boolean(invitedTutor) && !isEdit;
   const { quote, loadingQuote, creating, latestCreated, error } = useSelector((state) => state.classes);
   const [provinces, setProvinces] = useState([]);
   const [districts, setDistricts] = useState([]);
@@ -524,13 +534,39 @@ const FindTutorRequestFormContent = ({ pricingConfig, editClass = null }) => {
   const [saving, setSaving] = useState(false);
   const minuteOptions = useMemo(() => pricingConfig.minutesPerSessionOptions || [], [pricingConfig]);
   const classRequestSchema = useMemo(() => buildClassRequestSchema(pricingConfig), [pricingConfig]);
-  const defaultFormValues = useMemo(
-    () =>
-      isEdit
-        ? mapClassToFormValues(editClass)
-        : loadClassRequestFormDraft(getDefaultClassRequestValues(pricingConfig), minuteOptions),
-    [pricingConfig, minuteOptions, isEdit, editClass],
+
+  // ── Ràng buộc khi mời gia sư trực tiếp (khóa/lọc theo hồ sơ gia sư) ──
+  const inviteSubjects = useMemo(() => (isInvite ? invitedTutor.subjects || [] : []), [isInvite, invitedTutor]);
+  const inviteProvinceCode = isInvite ? invitedTutor.teachingAreas?.province ?? 0 : 0;
+  const inviteDistrictCodes = useMemo(
+    () => (isInvite ? (invitedTutor.teachingAreas?.districts || []).map((d) => Number(d.code)) : []),
+    [isInvite, invitedTutor],
   );
+  const inviteAllowedSlots = useMemo(
+    () => (isInvite ? invitedTutor.availability || [] : null),
+    [isInvite, invitedTutor],
+  );
+  const inviteGenderPref =
+    isInvite && (invitedTutor.gender === 'male' || invitedTutor.gender === 'female')
+      ? invitedTutor.gender
+      : 'any';
+  const inviteLevelPref = isInvite
+    ? OCCUPATION_TO_LEVEL_PREF[invitedTutor.occupationStatus] || 'any'
+    : 'any';
+
+  const defaultFormValues = useMemo(() => {
+    if (isEdit) return mapClassToFormValues(editClass);
+    if (isInvite) {
+      return {
+        ...getDefaultClassRequestValues(pricingConfig),
+        provinceCode: inviteProvinceCode,
+        tutorGenderPref: inviteGenderPref,
+        tutorLevelPref: inviteLevelPref,
+      };
+    }
+    return loadClassRequestFormDraft(getDefaultClassRequestValues(pricingConfig), minuteOptions);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pricingConfig, minuteOptions, isEdit, editClass, isInvite]);
   const form = useForm({ resolver: zodResolver(classRequestSchema), defaultValues: defaultFormValues });
   const provinceCode = useWatch({ control: form.control, name: 'provinceCode' });
   const studentCount = useWatch({ control: form.control, name: 'studentCount' });
@@ -551,7 +587,31 @@ const FindTutorRequestFormContent = ({ pricingConfig, editClass = null }) => {
   const [appliedPromo, setAppliedPromo] = useState(null);
   const [promoChecking, setPromoChecking] = useState(false);
   const [promoError, setPromoError] = useState("");
+  const [showPromoList, setShowPromoList] = useState(false);
+  const promoBoxRef = useRef(null);
   const promoCodeValue = useWatch({ control: form.control, name: 'promoCode' });
+  const myVouchers = useSelector((state) => state.vouchers.items);
+  const activeVouchers = useMemo(
+    () => (myVouchers || []).filter((v) => v.status === 'active'),
+    [myVouchers],
+  );
+
+  // Lấy kho voucher cá nhân để gợi ý ngay khi ấn vào ô mã ưu đãi
+  useEffect(() => {
+    dispatch(fetchMyVouchersThunk({ page: 1, limit: 50 }));
+  }, [dispatch]);
+
+  // Đóng danh sách gợi ý khi bấm ra ngoài
+  useEffect(() => {
+    if (!showPromoList) return;
+    const onClickOutside = (e) => {
+      if (promoBoxRef.current && !promoBoxRef.current.contains(e.target)) {
+        setShowPromoList(false);
+      }
+    };
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, [showPromoList]);
 
   // Quay lại sửa (quote=null) hoặc đổi mã -> bỏ trạng thái đã áp dụng
   useEffect(() => {
@@ -567,8 +627,8 @@ const FindTutorRequestFormContent = ({ pricingConfig, editClass = null }) => {
     }
   }, [promoCodeValue, appliedPromo]);
 
-  const handleApplyPromo = async () => {
-    const code = (form.getValues('promoCode') || "").trim();
+  const handleApplyPromo = async (overrideCode) => {
+    const code = (overrideCode ?? form.getValues('promoCode') ?? "").trim();
     if (!code) {
       setPromoError("Vui lòng nhập mã ưu đãi");
       return;
@@ -584,6 +644,12 @@ const FindTutorRequestFormContent = ({ pricingConfig, editClass = null }) => {
     } finally {
       setPromoChecking(false);
     }
+  };
+
+  const handleSelectVoucher = (voucher) => {
+    setShowPromoList(false);
+    form.setValue('promoCode', voucher.code, { shouldValidate: true });
+    handleApplyPromo(voucher.code);
   };
 
   const handleRemovePromo = () => {
@@ -628,13 +694,13 @@ const FindTutorRequestFormContent = ({ pricingConfig, editClass = null }) => {
     return () => cancelAnimationFrame(id);
   }, []);
 
-  // Chế độ chỉnh sửa: bỏ qua nháp (draft) và xoá trạng thái báo giá/đăng-mới còn sót lại
+  // Chế độ chỉnh sửa / mời gia sư: bỏ qua nháp (draft) và xoá trạng thái báo giá/đăng-mới còn sót lại
   useEffect(() => {
-    if (isEdit) dispatch(clearClassFlow());
-  }, [isEdit, dispatch]);
+    if (isEdit || isInvite) dispatch(clearClassFlow());
+  }, [isEdit, isInvite, dispatch]);
 
   useEffect(() => {
-    if (isEdit) return undefined; // không lưu nháp khi đang sửa bài đã đăng
+    if (isEdit || isInvite) return undefined; // không lưu nháp khi đang sửa bài / mời gia sư
     let debounceId;
     const unsubscribe = form.subscribe({
       formState: { values: true },
@@ -650,22 +716,25 @@ const FindTutorRequestFormContent = ({ pricingConfig, editClass = null }) => {
       unsubscribe();
       clearTimeout(debounceId);
     };
-  }, [form, isEdit]);
+  }, [form, isEdit, isInvite]);
 
-  const subjectSelectOptions = useMemo(
-    () => subjectOptions.map((subject) => ({ value: subject, label: subject })),
-    [subjectOptions],
-  );
+  const subjectSelectOptions = useMemo(() => {
+    // Mời gia sư: chỉ cho chọn trong các môn gia sư dạy
+    const list = isInvite ? subjectOptions.filter((s) => inviteSubjects.includes(s)) : subjectOptions;
+    return list.map((subject) => ({ value: subject, label: subject }));
+  }, [subjectOptions, isInvite, inviteSubjects]);
 
-  const provinceSelectOptions = useMemo(
-    () => provinces.map((item) => ({ value: String(item.code), label: item.name })),
-    [provinces],
-  );
+  const provinceSelectOptions = useMemo(() => {
+    // Mời gia sư: chỉ hiển thị tỉnh/thành mà gia sư có thể dạy (khóa, không cho đổi)
+    const list = isInvite ? provinces.filter((item) => Number(item.code) === Number(inviteProvinceCode)) : provinces;
+    return list.map((item) => ({ value: String(item.code), label: item.name }));
+  }, [provinces, isInvite, inviteProvinceCode]);
 
-  const districtSelectOptions = useMemo(
-    () => districts.map((item) => ({ value: String(item.code), label: item.name })),
-    [districts],
-  );
+  const districtSelectOptions = useMemo(() => {
+    // Mời gia sư: chỉ hiển thị quận/huyện gia sư có thể dạy
+    const list = isInvite ? districts.filter((item) => inviteDistrictCodes.includes(Number(item.code))) : districts;
+    return list.map((item) => ({ value: String(item.code), label: item.name }));
+  }, [districts, isInvite, inviteDistrictCodes]);
 
   const onQuote = async (values) => {
     const result = await dispatch(quoteClassThunk(values));
@@ -673,6 +742,20 @@ const FindTutorRequestFormContent = ({ pricingConfig, editClass = null }) => {
   };
 
   const onCreate = async () => {
+    // Luồng mời gia sư trực tiếp: tạo lớp + gửi lời mời tới gia sư được chọn
+    if (isInvite) {
+      const result = await dispatch(
+        createInvitedClassThunk({ ...form.getValues(), requestedTutorId: invitedTutor.id }),
+      );
+      if (!result.error) {
+        toast.success("Đã gửi lời mời tới gia sư. Vui lòng chờ gia sư phản hồi.");
+        dispatch(clearClassFlow());
+        form.reset(getDefaultClassRequestValues(pricingConfig));
+        navigate("/my-posts");
+      }
+      return;
+    }
+
     const result = await dispatch(createClassThunk(form.getValues()));
     if (!result.error) {
       clearClassRequestFormDraft();
@@ -709,7 +792,7 @@ const FindTutorRequestFormContent = ({ pricingConfig, editClass = null }) => {
     form.reset(getDefaultClassRequestValues(pricingConfig));
   };
 
-  if (!isEdit && latestCreated) {
+  if (!isEdit && !isInvite && latestCreated) {
     return (
       <div className="mx-auto mt-8 max-w-2xl rounded-3xl border border-emerald-100 bg-white p-8 text-center shadow-lg shadow-emerald-100/50">
         <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
@@ -743,6 +826,29 @@ const FindTutorRequestFormContent = ({ pricingConfig, editClass = null }) => {
     <div className="min-h-screen bg-slate-50/60 animate-in fade-in duration-500 motion-reduce:animate-none">
       <div className="mx-auto max-w-[1360px] px-4 py-6 md:px-6 md:py-8">
         <BookingProgressHeader control={form.control} isEdit={isEdit} />
+
+        {isInvite && (
+          <div className="mb-5 flex items-start gap-3 rounded-2xl border border-[#1e3a5f]/20 bg-[#1e3a5f]/5 p-4">
+            <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[#1e3a5f]" />
+            <div className="text-sm text-slate-700">
+              <p className="font-semibold text-[#1e3a5f]">
+                Bạn đang mời gia sư {invitedTutor.fullName}
+                {invitedTutor.dateOfBirth
+                  ? ` (sinh năm ${new Date(invitedTutor.dateOfBirth).getFullYear()}`
+                  : ''}
+                {invitedTutor.gender
+                  ? `${invitedTutor.dateOfBirth ? ', ' : ' ('}${TUTOR_GENDER_PREF_LABEL[invitedTutor.gender] || invitedTutor.gender})`
+                  : invitedTutor.dateOfBirth
+                    ? ')'
+                    : ''}
+              </p>
+              <p className="mt-1 text-slate-600">
+                Môn học, khu vực, khung giờ và yêu cầu gia sư đã được giới hạn theo hồ sơ của gia sư này.
+                Lớp sẽ chỉ được gửi riêng cho gia sư, không hiển thị công khai.
+              </p>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
           <div className="min-w-0 space-y-5 lg:col-span-9">
@@ -811,6 +917,7 @@ const FindTutorRequestFormContent = ({ pricingConfig, editClass = null }) => {
                               options={provinceSelectOptions}
                               searchPlaceholder="Tìm tỉnh/thành..."
                               emptyText="Không tìm thấy khu vực"
+                              disabled={isInvite}
                               triggerClassName="h-11 rounded-xl border-slate-200 text-sm focus-visible:ring-emerald-200"
                               contentClassName="max-h-80"
                             />
@@ -1038,10 +1145,21 @@ const FindTutorRequestFormContent = ({ pricingConfig, editClass = null }) => {
 
                   <div className="mt-8 border-t border-slate-100 pt-6">
                     <label className="mb-4 block text-sm font-semibold text-slate-800">Thời gian có thể học <span className="text-rose-500">*</span></label>
+                    {isInvite && (
+                      <p className="mb-3 text-xs font-medium text-[#1e3a5f]">
+                        Chỉ có thể chọn trong các khung giờ gia sư có thể dạy (ô mờ là giờ gia sư không dạy).
+                      </p>
+                    )}
                     <Controller
                       control={form.control}
                       name="availabilitySlots"
-                      render={({ field }) => <WeeklyHourGrid value={field.value} onChange={field.onChange} />}
+                      render={({ field }) => (
+                        <WeeklyHourGrid
+                          value={field.value}
+                          onChange={field.onChange}
+                          allowedSlots={inviteAllowedSlots}
+                        />
+                      )}
                     />
                     {errors.availabilitySlots && <p className="mt-2 text-xs text-rose-600">{errors.availabilitySlots.message}</p>}
                   </div>
@@ -1058,28 +1176,36 @@ const FindTutorRequestFormContent = ({ pricingConfig, editClass = null }) => {
                       <Controller
                         name="tutorGenderPref"
                         control={form.control}
-                        render={({ field }) => (
-                          <div className="grid grid-cols-3 gap-2">
-                            {[
-                              { value: 'any', label: 'Không yêu cầu' },
-                              { value: 'male', label: 'Nam' },
-                              { value: 'female', label: 'Nữ' },
-                            ].map((item) => (
-                              <button
-                                key={item.value}
-                                type="button"
-                                className={`h-10 rounded-xl border px-2 text-xs font-semibold transition sm:text-sm ${
-                                  field.value === item.value
-                                    ? 'border-emerald-600 bg-emerald-600 text-white shadow-sm'
-                                    : 'border-slate-200 bg-white text-slate-700 hover:border-emerald-200 hover:bg-emerald-50'
-                                }`}
-                                onClick={() => field.onChange(item.value)}
-                              >
-                                {item.label}
-                              </button>
-                            ))}
-                          </div>
-                        )}
+                        render={({ field }) =>
+                          isInvite ? (
+                            <div className="flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-700">
+                              <ShieldCheck className="h-4 w-4 text-[#1e3a5f]" />
+                              {TUTOR_GENDER_PREF_LABEL[field.value] || 'Không yêu cầu'}
+                              <span className="ml-auto text-xs font-normal text-slate-400">Theo hồ sơ gia sư</span>
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-3 gap-2">
+                              {[
+                                { value: 'any', label: 'Không yêu cầu' },
+                                { value: 'male', label: 'Nam' },
+                                { value: 'female', label: 'Nữ' },
+                              ].map((item) => (
+                                <button
+                                  key={item.value}
+                                  type="button"
+                                  className={`h-10 rounded-xl border px-2 text-xs font-semibold transition sm:text-sm ${
+                                    field.value === item.value
+                                      ? 'border-emerald-600 bg-emerald-600 text-white shadow-sm'
+                                      : 'border-slate-200 bg-white text-slate-700 hover:border-emerald-200 hover:bg-emerald-50'
+                                  }`}
+                                  onClick={() => field.onChange(item.value)}
+                                >
+                                  {item.label}
+                                </button>
+                              ))}
+                            </div>
+                          )
+                        }
                       />
                     </div>
                     <div>
@@ -1087,28 +1213,36 @@ const FindTutorRequestFormContent = ({ pricingConfig, editClass = null }) => {
                       <Controller
                         name="tutorLevelPref"
                         control={form.control}
-                        render={({ field }) => (
-                          <div className="grid grid-cols-3 gap-2">
-                            {[
-                              { value: 'any', label: 'Không yêu cầu' },
-                              { value: 'student', label: 'Sinh viên' },
-                              { value: 'teacher', label: 'Giáo viên' },
-                            ].map((item) => (
-                              <button
-                                key={item.value}
-                                type="button"
-                                className={`h-10 rounded-xl border px-2 text-xs font-semibold transition sm:text-sm ${
-                                  field.value === item.value
-                                    ? 'border-emerald-600 bg-emerald-600 text-white shadow-sm'
-                                    : 'border-slate-200 bg-white text-slate-700 hover:border-emerald-200 hover:bg-emerald-50'
-                                }`}
-                                onClick={() => field.onChange(item.value)}
-                              >
-                                {item.label}
-                              </button>
-                            ))}
-                          </div>
-                        )}
+                        render={({ field }) =>
+                          isInvite ? (
+                            <div className="flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-700">
+                              <ShieldCheck className="h-4 w-4 text-[#1e3a5f]" />
+                              {TUTOR_LEVEL_PREF_LABEL[field.value] || 'Không yêu cầu'}
+                              <span className="ml-auto text-xs font-normal text-slate-400">Theo hồ sơ gia sư</span>
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-3 gap-2">
+                              {[
+                                { value: 'any', label: 'Không yêu cầu' },
+                                { value: 'student', label: 'Sinh viên' },
+                                { value: 'teacher', label: 'Giáo viên' },
+                              ].map((item) => (
+                                <button
+                                  key={item.value}
+                                  type="button"
+                                  className={`h-10 rounded-xl border px-2 text-xs font-semibold transition sm:text-sm ${
+                                    field.value === item.value
+                                      ? 'border-emerald-600 bg-emerald-600 text-white shadow-sm'
+                                      : 'border-slate-200 bg-white text-slate-700 hover:border-emerald-200 hover:bg-emerald-50'
+                                  }`}
+                                  onClick={() => field.onChange(item.value)}
+                                >
+                                  {item.label}
+                                </button>
+                              ))}
+                            </div>
+                          )
+                        }
                       />
                     </div>
                   </div>
@@ -1201,13 +1335,41 @@ const FindTutorRequestFormContent = ({ pricingConfig, editClass = null }) => {
                 </div>
                 <div className="mt-4 rounded-2xl border border-emerald-100 bg-white p-5">
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">Mã ưu đãi (nếu có)</label>
-                  <div className="flex gap-2">
+                  <div ref={promoBoxRef} className="relative flex gap-2">
                     <Input
                       className="h-11 flex-1 rounded-xl border-slate-200 uppercase focus-visible:ring-emerald-200 disabled:opacity-70"
                       placeholder="Nhập mã ưu đãi"
                       disabled={Boolean(appliedPromo)}
+                      autoComplete="off"
                       {...form.register("promoCode")}
+                      onFocus={() => setShowPromoList(true)}
                     />
+                    {showPromoList && !appliedPromo && activeVouchers.length > 0 && (
+                      <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-60 overflow-auto rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
+                        <p className="px-2 py-1.5 text-xs font-medium text-slate-400">Mã giảm giá của bạn</p>
+                        {activeVouchers.map((voucher) => (
+                          <button
+                            key={voucher.id}
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => handleSelectVoucher(voucher)}
+                            className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition hover:bg-emerald-50"
+                          >
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+                              <Ticket className="h-4 w-4" />
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block font-mono text-sm font-bold tracking-wider text-slate-900">{voucher.code}</span>
+                              <span className="block text-xs font-medium text-emerald-700">
+                                {voucher.discountType === "percent"
+                                  ? `Giảm ${voucher.discountValue}%${voucher.maxDiscountAmount ? ` (tối đa ${formatPrice(voucher.maxDiscountAmount)})` : ""}`
+                                  : `Giảm ${formatPrice(voucher.discountValue)}`}
+                              </span>
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     {appliedPromo ? (
                       <Button
                         type="button"
@@ -1221,7 +1383,7 @@ const FindTutorRequestFormContent = ({ pricingConfig, editClass = null }) => {
                       <Button
                         type="button"
                         className="h-11 rounded-xl bg-slate-800 px-5 font-semibold text-white hover:bg-slate-900"
-                        onClick={handleApplyPromo}
+                        onClick={() => handleApplyPromo()}
                         disabled={promoChecking}
                       >
                         {promoChecking ? "Đang kiểm tra..." : "Áp dụng"}
@@ -1241,7 +1403,13 @@ const FindTutorRequestFormContent = ({ pricingConfig, editClass = null }) => {
                     Quay lại sửa
                   </Button>
                   <Button className="h-11 flex-1 rounded-xl bg-emerald-600 font-semibold text-white hover:bg-emerald-700" onClick={onCreate} disabled={creating}>
-                    {creating ? "Đang đăng..." : "Đồng ý & Đăng bài"}
+                    {creating
+                      ? isInvite
+                        ? "Đang gửi lời mời..."
+                        : "Đang đăng..."
+                      : isInvite
+                        ? "Đồng ý & Gửi lời mời"
+                        : "Đồng ý & Đăng bài"}
                   </Button>
                 </div>
               </div>
@@ -1284,12 +1452,17 @@ const FindTutorRequestFormContent = ({ pricingConfig, editClass = null }) => {
 
 const FindTutorRequestPage = () => {
   const { id: editId } = useParams();
+  const [searchParams] = useSearchParams();
+  const invitedTutorId = editId ? null : searchParams.get('tutor');
   const [pricingConfig, setPricingConfig] = useState(null);
   const [pricingConfigError, setPricingConfigError] = useState(null);
   const [loadingPricingConfig, setLoadingPricingConfig] = useState(true);
   const [editClass, setEditClass] = useState(null);
   const [loadingClass, setLoadingClass] = useState(Boolean(editId));
   const [classError, setClassError] = useState(null);
+  const [invitedTutor, setInvitedTutor] = useState(null);
+  const [loadingInvitedTutor, setLoadingInvitedTutor] = useState(Boolean(invitedTutorId));
+  const [invitedTutorError, setInvitedTutorError] = useState(null);
 
   useEffect(() => {
     classService
@@ -1320,12 +1493,30 @@ const FindTutorRequestPage = () => {
       .finally(() => setLoadingClass(false));
   }, [editId]);
 
-  if (loadingPricingConfig || loadingClass) {
+  // Chế độ mời gia sư trực tiếp: tải hồ sơ gia sư được mời để khóa/lọc các trường theo hồ sơ
+  useEffect(() => {
+    if (!invitedTutorId) return;
+    tutorService
+      .getTutorById(invitedTutorId)
+      .then((res) => {
+        const t = res.data?.data?.tutor;
+        if (!t) setInvitedTutorError("Không tìm thấy gia sư được mời");
+        else setInvitedTutor(t);
+      })
+      .catch((err) => setInvitedTutorError(err.response?.data?.message || "Không tải được hồ sơ gia sư"))
+      .finally(() => setLoadingInvitedTutor(false));
+  }, [invitedTutorId]);
+
+  if (loadingPricingConfig || loadingClass || loadingInvitedTutor) {
     return (
       <div className="flex min-h-screen items-start justify-center bg-slate-50/60 px-4 pt-32 text-center text-slate-600">
         <div className="flex items-center gap-2 animate-in fade-in duration-300">
           <Loader2 className="h-5 w-5 animate-spin text-emerald-600" />
-          {loadingClass ? "Đang tải bài đăng..." : "Đang tải cấu hình học phí..."}
+          {loadingClass
+            ? "Đang tải bài đăng..."
+            : loadingInvitedTutor
+              ? "Đang tải hồ sơ gia sư..."
+              : "Đang tải cấu hình học phí..."}
         </div>
       </div>
     );
@@ -1351,7 +1542,24 @@ const FindTutorRequestPage = () => {
     );
   }
 
-  return <FindTutorRequestFormContent pricingConfig={pricingConfig} editClass={editClass} />;
+  if (invitedTutorId && (invitedTutorError || !invitedTutor)) {
+    return (
+      <div className="mx-auto max-w-6xl px-4 py-16 text-center">
+        <p className="text-rose-600">{invitedTutorError || "Không tìm thấy gia sư được mời"}</p>
+        <Link to="/tutors" className="mt-3 inline-block text-sm font-medium text-emerald-700 hover:underline">
+          Quay lại danh sách gia sư
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <FindTutorRequestFormContent
+      pricingConfig={pricingConfig}
+      editClass={editClass}
+      invitedTutor={invitedTutor}
+    />
+  );
 };
 
 export default FindTutorRequestPage;
